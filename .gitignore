@@ -1,0 +1,52 @@
+# === Secrets & Environment ===
+.env
+.env.local
+.railway.env
+.wrangler.env
+*.pem
+*.key
+
+# === Backend ===
+# Rust
+target/
+Cargo.lock
+*.rs.bk
+
+# SQLite databases
+*.db
+*.db-shm
+*.db-wal
+
+# === Frontend ===
+# Next.js
+.next/
+out/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# === Cloudflare Worker ===
+.wrangler/
+dist/
+
+# === OS & Editor ===
+.DS_Store
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# === Logs ===
+*.log
+logs/
+
+# === Misc ===
+coverage/
+*.pid
+*.seed
+*.pid.lock
