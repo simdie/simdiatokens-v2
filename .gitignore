@@ -9,7 +9,6 @@
 # === Backend ===
 # Rust
 target/
-Cargo.lock
 *.rs.bk
 
 # SQLite databases
