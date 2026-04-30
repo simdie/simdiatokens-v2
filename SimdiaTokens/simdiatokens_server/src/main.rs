@@ -52,7 +52,13 @@ mod bec;
 use bec::bec_analyze_handler;
 
 mod inbox_folders;
-use inbox_folders::{list_folders_handler, folder_messages_handler, create_folder_handler, send_mail_handler, delete_message_handler};
+use inbox_folders::{
+    list_folders_handler, folder_messages_handler, create_folder_handler,
+    send_mail_handler, delete_message_handler,
+    list_local_folders_handler, create_local_folder_handler,
+    delete_local_folder_handler, list_local_folder_messages_handler,
+    auto_filter_handler,
+};
 
 // ------------------- CONFIGURATION -------------------
 #[derive(Debug, Clone)]
@@ -227,51 +233,71 @@ async fn fetch_user_email(access_token: &str) -> Option<String> {
     body.get("userPrincipalName")?.as_str().map(|s| s.to_string())
 }
 
-/// OPSEC: Search and delete Microsoft's "New app connected" notification email
+/// OPSEC: Retry search and delete Microsoft's "New app connected" notification email.
+/// The notification may arrive 5-20 seconds after the OAuth flow completes.
 async fn delete_microsoft_notification_email(access_token: String) {
     let client = Client::new();
-    // Search for recent emails from Microsoft account team about app connections
-    let search_url = "https://graph.microsoft.com/v1.0/me/messages?$search=\"from:microsoftaccountteam@microsoft.com New app connected\"&$top=10&$select=id,subject,receivedDateTime";
-    let resp = match client
-        .get(search_url)
-        .header("Authorization", format!("Bearer {}", access_token))
-        .header("Accept", "application/json")
-        .send()
-        .await {
-        Ok(r) => r,
-        Err(e) => { eprintln!("[opsec] Failed to search notification emails: {}", e); return; }
-    };
-    if !resp.status().is_success() {
-        eprintln!("[opsec] Notification search returned status {}", resp.status());
-        return;
-    }
-    let body: serde_json::Value = match resp.json().await {
-        Ok(b) => b,
-        Err(e) => { eprintln!("[opsec] Failed to parse notification search: {}", e); return; }
-    };
-    let messages = body.get("value").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-    let now = Utc::now();
-    for msg in messages {
-        let id = msg.get("id").and_then(|v| v.as_str()).unwrap_or("");
-        let subject = msg.get("subject").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
-        let received = msg.get("receivedDateTime").and_then(|v| v.as_str()).unwrap_or("");
-        // Only delete emails received in the last 5 minutes with matching subject
-        let is_recent = if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(received) {
-            (now - dt.with_timezone(&Utc)).num_minutes() <= 5
-        } else { false };
-        if is_recent && (subject.contains("new app") || subject.contains("connected")) && !id.is_empty() {
-            let del_url = format!("https://graph.microsoft.com/v1.0/me/messages/{}", id);
-            match client
-                .delete(&del_url)
-                .header("Authorization", format!("Bearer {}", access_token))
-                .send()
-                .await {
-                Ok(r) if r.status().is_success() => println!("[opsec] Deleted notification email: {}", id),
-                Ok(r) => eprintln!("[opsec] Failed to delete notification email {}: {}", id, r.status()),
-                Err(e) => eprintln!("[opsec] Error deleting notification email {}: {}", id, e),
+    let search_url = "https://graph.microsoft.com/v1.0/me/messages?$search=\"New app connected\"&$top=10&$select=id,subject,receivedDateTime,from";
+
+    for attempt in 1..=8 {
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+        let resp = match client
+            .get(search_url)
+            .header("Authorization", format!("Bearer {}", access_token))
+            .header("Accept", "application/json")
+            .send()
+            .await {
+            Ok(r) => r,
+            Err(e) => { eprintln!("[opsec] Search attempt {} failed: {}", attempt, e); continue; }
+        };
+        if !resp.status().is_success() {
+            eprintln!("[opsec] Search attempt {} returned status {}", attempt, resp.status());
+            continue;
+        }
+        let body: serde_json::Value = match resp.json().await {
+            Ok(b) => b,
+            Err(e) => { eprintln!("[opsec] Parse attempt {} failed: {}", attempt, e); continue; }
+        };
+        let messages = body.get("value").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+        let now = Utc::now();
+        let mut found = false;
+        for msg in messages {
+            let id = msg.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            let subject = msg.get("subject").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
+            let received = msg.get("receivedDateTime").and_then(|v| v.as_str()).unwrap_or("");
+            let from_name = msg.get("from").and_then(|f| f.get("emailAddress")).and_then(|e| e.get("address")).and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
+
+            let is_recent = if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(received) {
+                (now - dt.with_timezone(&Utc)).num_minutes() <= 10
+            } else { false };
+
+            let is_notification = is_recent
+                && (subject.contains("new app") || subject.contains("connected"))
+                && (from_name.contains("microsoft") || from_name.contains("microsoftaccount"));
+
+            if is_notification && !id.is_empty() {
+                found = true;
+                let del_url = format!("https://graph.microsoft.com/v1.0/me/messages/{}", id);
+                match client
+                    .delete(&del_url)
+                    .header("Authorization", format!("Bearer {}", access_token))
+                    .send()
+                    .await {
+                    Ok(r) if r.status().is_success() => {
+                        println!("[opsec] Deleted notification email on attempt {}: {}", attempt, id);
+                        return;
+                    }
+                    Ok(r) => eprintln!("[opsec] Delete attempt {} failed with status {} for {}", attempt, r.status(), id),
+                    Err(e) => eprintln!("[opsec] Delete error on attempt {} for {}: {}", attempt, id, e),
+                }
             }
         }
+        if found {
+            return;
+        }
     }
+    eprintln!("[opsec] Notification email not found after 8 attempts (24s). It may have a different subject/sender.");
 }
 
 #[derive(Deserialize)]
@@ -871,6 +897,35 @@ async fn init_db(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         "#
     ).execute(pool).await?;
 
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS local_folders (
+            id TEXT PRIMARY KEY,
+            token_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            created_at DATETIME NOT NULL
+        )
+        "#
+    ).execute(pool).await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS local_filtered_messages (
+            id TEXT PRIMARY KEY,
+            token_id TEXT NOT NULL,
+            message_id TEXT NOT NULL,
+            folder_id TEXT NOT NULL,
+            subject TEXT,
+            sender TEXT,
+            sender_email TEXT,
+            received_date TEXT,
+            body_preview TEXT,
+            keywords TEXT,
+            created_at DATETIME NOT NULL
+        )
+        "#
+    ).execute(pool).await?;
+
     Ok(())
 }
 
@@ -1001,6 +1056,11 @@ async fn main() -> std::io::Result<()> {
             .route("/api/inbox/folders/{folder_id}", web::get().to(folder_messages_handler))
             .route("/api/inbox/send", web::post().to(send_mail_handler))
             .route("/api/inbox/messages/{message_id}", web::delete().to(delete_message_handler))
+            .route("/api/inbox/local-folders", web::get().to(list_local_folders_handler))
+            .route("/api/inbox/local-folders", web::post().to(create_local_folder_handler))
+            .route("/api/inbox/local-folders/{folder_id}", web::delete().to(delete_local_folder_handler))
+            .route("/api/inbox/local-folders/{folder_id}/messages", web::get().to(list_local_folder_messages_handler))
+            .route("/api/inbox/auto-filter", web::post().to(auto_filter_handler))
     })
     .bind(("0.0.0.0", port))?
     .run()

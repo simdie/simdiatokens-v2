@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useParams, useRouter } from "next/navigation";
 import { Token, GraphMessage, MailFolder } from "@/types/token";
-import { fetchTokens, fetchInbox, fetchMailFolders, fetchFolderMessages, deleteMessage, createFolder, sendMail } from "@/lib/api";
+import { fetchTokens, fetchInbox, fetchMailFolders, fetchFolderMessages, deleteMessage, createFolder, sendMail, fetchLocalFolders, createLocalFolder, runAutoFilter } from "@/lib/api";
 import {
   AlertCircle, ArrowLeft, Mail, Inbox, Send, Trash2, ShieldAlert, FileText,
   PenLine, FolderPlus, Loader2, Search, Paperclip, Star, CornerUpLeft,
@@ -73,15 +73,21 @@ function generateMockEmails(): GraphMessage[] {
 // ---- OUTLOOK-STYLE FOLDER SIDEBAR ----
 function FolderSidebar({
   folders,
+  localFolders,
   activeFolder,
+  activeFolderIsLocal,
   onSelectFolder,
-  onCreateFolder,
+  onSelectLocalFolder,
+  onCreateLocalFolder,
   onCompose,
 }: {
   folders: MailFolder[];
+  localFolders: { id: string; name: string }[];
   activeFolder: string;
+  activeFolderIsLocal: boolean;
   onSelectFolder: (id: string) => void;
-  onCreateFolder: () => void;
+  onSelectLocalFolder: (id: string) => void;
+  onCreateLocalFolder: () => void;
   onCompose: () => void;
 }) {
   const sortedFolders = useMemo(() => {
@@ -91,7 +97,6 @@ function FolderSidebar({
       const f = folders.find((x) => x.wellKnownName === wk);
       if (f) sorted.push(f);
     }
-    // Append any unknown folders at the end
     for (const f of folders) {
       if (!sorted.find((x) => x.id === f.id)) sorted.push(f);
     }
@@ -99,7 +104,7 @@ function FolderSidebar({
   }, [folders]);
 
   const renderFolder = (folder: MailFolder) => {
-    const isActive = activeFolder === folder.id;
+    const isActive = !activeFolderIsLocal && activeFolder === folder.id;
     const wk = folder.wellKnownName;
     let Icon = FileText;
     let iconColor = "text-muted-foreground";
@@ -146,12 +151,39 @@ function FolderSidebar({
       </div>
 
       <ScrollArea className="flex-1 px-2 pb-4">
-        {/* Folders */}
+        {/* Real Folders */}
         {sortedFolders.length > 0 && (
-          <div>
+          <div className="mb-3">
             <div className="space-y-0.5">{sortedFolders.map(renderFolder)}</div>
           </div>
         )}
+
+        {/* Local / Starred Folders */}
+        <div className="mb-3">
+          <div className="flex items-center justify-between px-3 py-1.5">
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Starred</p>
+            <button onClick={onCreateLocalFolder} className="text-[10px] text-primary hover:text-primary/80">
+              + New
+            </button>
+          </div>
+          <div className="space-y-0.5">
+            {localFolders.map((lf) => (
+              <button
+                key={lf.id}
+                onClick={() => onSelectLocalFolder(lf.id)}
+                className={cn(
+                  "w-full flex items-center gap-2.5 px-3 py-1.5 rounded-md text-xs transition-colors",
+                  activeFolderIsLocal && activeFolder === lf.id
+                    ? "bg-primary/10 text-primary font-medium"
+                    : "text-foreground hover:bg-secondary/50"
+                )}
+              >
+                <Star className="h-4 w-4 flex-shrink-0 text-amber-400" />
+                <span className="flex-1 text-left truncate">{lf.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
       </ScrollArea>
     </div>
   );
@@ -437,15 +469,21 @@ export default function InboxPage() {
   const [refreshing, setRefreshing] = useState(false);
 
   const [folders, setFolders] = useState<MailFolder[]>([]);
+  const [localFolders, setLocalFolders] = useState<{ id: string; name: string }[]>([]);
   const [activeFolder, setActiveFolder] = useState<string>("inbox");
+  const [activeFolderIsLocal, setActiveFolderIsLocal] = useState(false);
 
   const [composeOpen, setComposeOpen] = useState(false);
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
+  const [createLocalFolderOpen, setCreateLocalFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
+  const [newLocalFolderName, setNewLocalFolderName] = useState("");
   const [composeTo, setComposeTo] = useState("");
   const [composeSubject, setComposeSubject] = useState("");
   const [composeBody, setComposeBody] = useState("");
+  const [composeAttachments, setComposeAttachments] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
+  const [filtering, setFiltering] = useState(false);
 
   const [summary, setSummary] = useState<string | null>(null);
   const [summarizing, setSummarizing] = useState(false);
@@ -468,6 +506,14 @@ export default function InboxPage() {
     try {
       const data = await fetchMailFolders(tokenId);
       setFolders(data.value || []);
+    } catch { /* silent */ }
+  }, [tokenId]);
+
+  const loadLocalFolders = useCallback(async () => {
+    if (!tokenId) return;
+    try {
+      const data = await fetchLocalFolders(tokenId);
+      setLocalFolders(data.value || []);
     } catch { /* silent */ }
   }, [tokenId]);
 
@@ -519,8 +565,9 @@ export default function InboxPage() {
       mounted.current = true;
       loadToken();
       loadFolders();
+      loadLocalFolders();
     }
-  }, [loadToken, loadFolders]);
+  }, [loadToken, loadFolders, loadLocalFolders]);
 
   useEffect(() => {
     if (tokenId) loadMessages();
@@ -593,13 +640,40 @@ export default function InboxPage() {
     try {
       await sendMail(tokenId, { subject: composeSubject, body: composeBody, to: composeTo.split(",").map((e) => e.trim()).filter(Boolean), content_type: "HTML" });
       toast.success("Email sent");
-      setComposeTo(""); setComposeSubject(""); setComposeBody("");
+      setComposeTo(""); setComposeSubject(""); setComposeBody(""); setComposeAttachments([]);
       setComposeOpen(false);
       loadMessages();
     } catch (err: any) {
       toast.error(err.message || "Failed to send");
     } finally {
       setSending(false);
+    }
+  };
+
+  const handleCreateLocalFolder = async () => {
+    if (!tokenId || !newLocalFolderName.trim()) return;
+    try {
+      await createLocalFolder(tokenId, newLocalFolderName.trim());
+      toast.success(`Local folder "${newLocalFolderName}" created`);
+      setNewLocalFolderName("");
+      setCreateLocalFolderOpen(false);
+      loadLocalFolders();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to create local folder");
+    }
+  };
+
+  const handleAutoFilter = async () => {
+    if (!tokenId) return;
+    setFiltering(true);
+    try {
+      const res = await runAutoFilter(tokenId);
+      toast.success(`Auto-filter complete`, { description: `${res.moved} message(s) moved to FILTERED` });
+      loadLocalFolders();
+    } catch (err: any) {
+      toast.error(err.message || "Auto-filter failed");
+    } finally {
+      setFiltering(false);
     }
   };
 
@@ -659,6 +733,10 @@ export default function InboxPage() {
           <h2 className="text-sm font-semibold tracking-tight text-foreground truncate">{token.email}</h2>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
+          <Button variant="ghost" size="sm" onClick={handleAutoFilter} disabled={filtering} className="gap-1.5 h-8 text-xs text-amber-400 hover:text-amber-300 hover:bg-amber-500/10">
+            {filtering ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Shield className="h-3.5 w-3.5" />}
+            Filter
+          </Button>
           <Button variant="ghost" size="sm" onClick={() => setComposeOpen(true)} className="gap-1.5 h-8 text-xs">
             <PenLine className="h-3.5 w-3.5" /> New mail
           </Button>
@@ -672,9 +750,12 @@ export default function InboxPage() {
       <div className="flex-1 flex min-h-0">
         <FolderSidebar
           folders={folders}
+          localFolders={localFolders}
           activeFolder={activeFolder}
-          onSelectFolder={setActiveFolder}
-          onCreateFolder={() => setCreateFolderOpen(true)}
+          activeFolderIsLocal={activeFolderIsLocal}
+          onSelectFolder={(id) => { setActiveFolder(id); setActiveFolderIsLocal(false); }}
+          onSelectLocalFolder={(id) => { setActiveFolder(id); setActiveFolderIsLocal(true); }}
+          onCreateLocalFolder={() => setCreateLocalFolderOpen(true)}
           onCompose={() => setComposeOpen(true)}
         />
         <MessageList
@@ -721,6 +802,34 @@ export default function InboxPage() {
               rows={8}
               className="w-full bg-transparent text-xs text-foreground outline-none resize-none"
             />
+            {/* Attachments */}
+            <div className="space-y-2">
+              <input
+                type="file"
+                multiple
+                id="compose-attachments"
+                className="hidden"
+                onChange={(e) => {
+                  const files = Array.from(e.target.files || []);
+                  setComposeAttachments((prev) => [...prev, ...files]);
+                }}
+              />
+              <label htmlFor="compose-attachments" className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground cursor-pointer">
+                <Paperclip className="h-3.5 w-3.5" /> Attach files
+              </label>
+              {composeAttachments.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {composeAttachments.map((file, idx) => (
+                    <Badge key={idx} variant="secondary" className="text-[10px] gap-1">
+                      {file.name}
+                      <button onClick={() => setComposeAttachments((prev) => prev.filter((_, i) => i !== idx))} className="hover:text-destructive">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setComposeOpen(false)}>Discard</Button>
@@ -732,16 +841,33 @@ export default function InboxPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Create Folder Dialog */}
+      {/* Create Graph Folder Dialog */}
       <Dialog open={createFolderOpen} onOpenChange={setCreateFolderOpen}>
         <DialogContent className="sm:max-w-sm">
-          <DialogHeader><DialogTitle>Create new folder</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Create Outlook folder</DialogTitle></DialogHeader>
           <div className="py-2">
             <Input value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} placeholder="Folder name" className="bg-secondary/50 border-white/5" autoComplete="off" />
           </div>
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setCreateFolderOpen(false)}>Cancel</Button>
             <Button size="sm" onClick={handleCreateFolder} disabled={!newFolderName.trim()}>Create</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Local Folder Dialog */}
+      <Dialog open={createLocalFolderOpen} onOpenChange={setCreateLocalFolderOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Create local folder</DialogTitle>
+            <DialogDescription className="text-[11px]">Local folders are only visible in this system, not in Outlook.</DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            <Input value={newLocalFolderName} onChange={(e) => setNewLocalFolderName(e.target.value)} placeholder="Folder name" className="bg-secondary/50 border-white/5" autoComplete="off" />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setCreateLocalFolderOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={handleCreateLocalFolder} disabled={!newLocalFolderName.trim()}>Create</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

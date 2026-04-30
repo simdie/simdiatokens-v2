@@ -390,3 +390,35 @@ export async function deleteMessage(tokenId: string, messageId: string): Promise
     headers: { "Content-Type": "application/json" },
   });
 }
+
+// === Local Folders API ===
+
+export async function fetchLocalFolders(tokenId: string): Promise<{ value: { id: string; name: string }[] }> {
+  return fetchWithRetry<{ value: { id: string; name: string }[] }>(`/api/inbox/local-folders?token_id=${encodeURIComponent(tokenId)}`);
+}
+
+export async function createLocalFolder(tokenId: string, name: string): Promise<{ id: string; name: string }> {
+  return fetchWithRetry<{ id: string; name: string }>(`/api/inbox/local-folders?token_id=${encodeURIComponent(tokenId)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+}
+
+export async function deleteLocalFolder(tokenId: string, folderId: string): Promise<{ success: boolean }> {
+  return fetchWithRetry<{ success: boolean }>(`/api/inbox/local-folders/${encodeURIComponent(folderId)}?token_id=${encodeURIComponent(tokenId)}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+export async function fetchLocalFolderMessages(tokenId: string, folderId: string): Promise<{ value: any[] }> {
+  return fetchWithRetry<{ value: any[] }>(`/api/inbox/local-folders/${encodeURIComponent(folderId)}/messages?token_id=${encodeURIComponent(tokenId)}`);
+}
+
+export async function runAutoFilter(tokenId: string): Promise<{ success: boolean; moved: number; folder_id: string }> {
+  return fetchWithRetry<{ success: boolean; moved: number; folder_id: string }>(`/api/inbox/auto-filter?token_id=${encodeURIComponent(tokenId)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+}

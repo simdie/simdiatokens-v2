@@ -26,6 +26,9 @@ import {
   createFolder,
   sendMail,
   deleteMessage,
+  fetchLocalFolders,
+  createLocalFolder,
+  runAutoFilter,
 } from "@/lib/utils";
 
 export {
@@ -56,6 +59,9 @@ export {
   createFolder,
   sendMail,
   deleteMessage,
+  fetchLocalFolders,
+  createLocalFolder,
+  runAutoFilter,
 };
 
 export type {

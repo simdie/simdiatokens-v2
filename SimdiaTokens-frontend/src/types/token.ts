@@ -187,27 +187,34 @@ export interface BECAnalysisReport {
   attackAngles: AttackAngle[];
 }
 
-// === Keyword-based BEC Scan types ===
+// === Conversation-based BEC Scan types ===
 
-export interface BECFinding {
-  message_id: string;
+export interface BECMessageInConversation {
+  id: string;
   subject: string;
   sender: string;
+  sender_email: string;
   received_date: string;
-  keywords_found: string[];
-  risk_score: number;
-  snippet: string;
+  body_preview: string;
+  is_read: boolean;
   has_attachments: boolean;
+}
+
+export interface BECConversation {
+  conversation_id: string;
+  subject: string;
+  participant_count: number;
+  message_count: number;
+  keywords_matched: string[];
+  messages: BECMessageInConversation[];
+  latest_date: string;
 }
 
 export interface BECScanReport {
   analyzed_at: string;
-  total_messages: number;
-  flagged_messages: number;
-  high_risk_count: number;
-  medium_risk_count: number;
-  low_risk_count: number;
-  findings: BECFinding[];
+  total_conversations: number;
+  flagged_conversations: number;
+  conversations: BECConversation[];
 }
 
 // === Campaign types ===

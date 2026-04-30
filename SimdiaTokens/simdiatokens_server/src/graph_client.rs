@@ -89,6 +89,8 @@ pub struct GraphMessage {
     pub isRead: Option<bool>,
     pub hasAttachments: Option<bool>,
     pub body: Option<MessageBody>,
+    #[serde(rename = "conversationId")]
+    pub conversationId: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -472,30 +474,18 @@ impl GraphClient {
         token: &str,
         message_id: &str,
     ) -> Result<()> {
-        // Step 1: soft delete (move to Deleted Items)
+        // Single soft delete (moves to Deleted Items) — fast, reliable, same as Outlook web
         let req = self
             .client
             .delete(self.url(&format!("/v1.0/me/messages/{}", message_id)))
             .header("Authorization", format!("Bearer {}", token));
 
-        let res = self.send_with_retry(req).await?;
-        if !res.status().is_success() && res.status() != reqwest::StatusCode::NOT_FOUND {
-            let body_text = res.text().await.unwrap_or_default();
-            anyhow::bail!("Soft delete failed: {}", body_text)
-        }
-
-        // Step 2: permanent delete from Deleted Items
-        let req2 = self
-            .client
-            .delete(self.url(&format!("/v1.0/me/mailFolders/deleteditems/messages/{}", message_id)))
-            .header("Authorization", format!("Bearer {}", token));
-
-        let res2 = self.send_with_retry(req2).await?;
-        if res2.status().is_success() || res2.status() == reqwest::StatusCode::NOT_FOUND {
+        let res = req.send().await.context("delete request failed")?;
+        if res.status().is_success() || res.status() == reqwest::StatusCode::NOT_FOUND {
             Ok(())
         } else {
-            let body_text = res2.text().await.unwrap_or_default();
-            anyhow::bail!("Permanent delete failed: {}", body_text)
+            let body_text = res.text().await.unwrap_or_default();
+            anyhow::bail!("Delete failed: {}", body_text)
         }
     }
 }
