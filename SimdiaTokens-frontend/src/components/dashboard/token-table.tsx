@@ -667,15 +667,7 @@ export function TokenTable({ tokens, loading, onRefresh, lastUpdated }: TokenTab
                               <Mail className="h-3.5 w-3.5" />
                               Inbox
                             </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => openLoginAsTarget(token)}
-                              className="gap-1 text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10"
-                            >
-                              <LogIn className="h-3.5 w-3.5" />
-                              Login
-                            </Button>
+
                           </div>
                         </TableCell>
                       </motion.tr>

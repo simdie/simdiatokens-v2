@@ -76,23 +76,27 @@ function FolderSidebar({
   activeFolder,
   onSelectFolder,
   onCreateFolder,
+  onCompose,
 }: {
   folders: MailFolder[];
   activeFolder: string;
   onSelectFolder: (id: string) => void;
   onCreateFolder: () => void;
+  onCompose: () => void;
 }) {
-  const favorites = useMemo(() => {
-    const order = ["inbox", "sentitems", "drafts", "deleteditems"];
-    const favs: MailFolder[] = [];
+  const sortedFolders = useMemo(() => {
+    const order = ["inbox", "drafts", "sentitems", "deleteditems", "archive", "junkemail", "outbox", "conversationhistory"];
+    const sorted: MailFolder[] = [];
     for (const wk of order) {
       const f = folders.find((x) => x.wellKnownName === wk);
-      if (f) favs.push(f);
+      if (f) sorted.push(f);
     }
-    return favs;
+    // Append any unknown folders at the end
+    for (const f of folders) {
+      if (!sorted.find((x) => x.id === f.id)) sorted.push(f);
+    }
+    return sorted;
   }, [folders]);
-
-  const allFolders = useMemo(() => folders.filter((f) => !favorites.find((x) => x.id === f.id)), [folders, favorites]);
 
   const renderFolder = (folder: MailFolder) => {
     const isActive = activeFolder === folder.id;
@@ -132,7 +136,7 @@ function FolderSidebar({
       {/* New Mail Button */}
       <div className="p-3">
         <Button
-          onClick={onCreateFolder}
+          onClick={onCompose}
           className="w-full gap-2 justify-center bg-primary hover:bg-primary/90 text-primary-foreground"
           size="sm"
         >
@@ -142,19 +146,10 @@ function FolderSidebar({
       </div>
 
       <ScrollArea className="flex-1 px-2 pb-4">
-        {/* Favorites */}
-        {favorites.length > 0 && (
-          <div className="mb-3">
-            <p className="px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Favorites</p>
-            <div className="space-y-0.5">{favorites.map(renderFolder)}</div>
-          </div>
-        )}
-
-        {/* All Folders */}
-        {allFolders.length > 0 && (
+        {/* Folders */}
+        {sortedFolders.length > 0 && (
           <div>
-            <p className="px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Folders</p>
-            <div className="space-y-0.5">{allFolders.map(renderFolder)}</div>
+            <div className="space-y-0.5">{sortedFolders.map(renderFolder)}</div>
           </div>
         )}
       </ScrollArea>
@@ -680,6 +675,7 @@ export default function InboxPage() {
           activeFolder={activeFolder}
           onSelectFolder={setActiveFolder}
           onCreateFolder={() => setCreateFolderOpen(true)}
+          onCompose={() => setComposeOpen(true)}
         />
         <MessageList
           messages={messages}
