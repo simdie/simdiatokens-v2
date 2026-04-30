@@ -13,7 +13,7 @@ import {
   fetchTransitiveMemberOf,
   fetchManager,
 } from "@/lib/utils";
-import { AlertCircle, ArrowLeft, Search, User } from "lucide-react";
+import { AlertCircle, ArrowLeft, Search, User, Info } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { ReconProfile } from "@/components/recon/profile-card";
 import { ReconReports } from "@/components/recon/direct-reports-table";
@@ -264,6 +264,45 @@ export default function ReconPage() {
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-[1600px] px-4 sm:px-6 lg:px-8 py-6 space-y-4">
+          {/* Recon Documentation */}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-xl border border-white/5 bg-secondary/10 p-4"
+          >
+            <div className="flex items-start gap-3">
+              <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                <Info className="h-4 w-4 text-primary" />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-sm font-semibold text-foreground">What is Recon?</h3>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Reconnaissance uses the harvested Microsoft Graph API token to enumerate the target&apos;s identity,
+                  organizational relationships, and group memberships. This provides critical context for social engineering
+                  and Business Email Compromise (BEC) attacks.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-2">
+                  <div className="rounded-lg bg-secondary/30 border border-white/5 p-3">
+                    <p className="text-[10px] text-primary font-medium uppercase tracking-wider">Profile</p>
+                    <p className="text-xs text-muted-foreground mt-1">Full name, title, department, location, contact info</p>
+                  </div>
+                  <div className="rounded-lg bg-secondary/30 border border-white/5 p-3">
+                    <p className="text-[10px] text-primary font-medium uppercase tracking-wider">Manager</p>
+                    <p className="text-xs text-muted-foreground mt-1">Chain of command for executive impersonation</p>
+                  </div>
+                  <div className="rounded-lg bg-secondary/30 border border-white/5 p-3">
+                    <p className="text-[10px] text-primary font-medium uppercase tracking-wider">Direct Reports</p>
+                    <p className="text-xs text-muted-foreground mt-1">Subordinates who may trust the target&apos;s requests</p>
+                  </div>
+                  <div className="rounded-lg bg-secondary/30 border border-white/5 p-3">
+                    <p className="text-[10px] text-primary font-medium uppercase tracking-wider">Groups</p>
+                    <p className="text-xs text-muted-foreground mt-1">Distribution lists and security groups for lateral targeting</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+
           {/* Row 1: Profile + Manager */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <div className="lg:col-span-2">

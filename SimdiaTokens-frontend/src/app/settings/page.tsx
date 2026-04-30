@@ -26,6 +26,7 @@ import {
   ChevronRight,
   Server,
   Activity,
+  KeyRound,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -42,6 +43,7 @@ import {
   fetchStealthConfig,
   testDecryption,
   purgeExpiredTokens,
+  changePassword,
 } from "@/lib/utils";
 
 // === Schemas ===
@@ -101,6 +103,45 @@ export default function SettingsPage() {
   const [testCiphertext, setTestCiphertext] = useState("");
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [showApiKey, setShowApiKey] = useState(false);
+
+  // Password Change
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [passwordChanging, setPasswordChanging] = useState(false);
+
+  const handleChangePassword = async () => {
+    if (!currentPassword || !newPassword) {
+      toast.error("Enter both current and new password");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error("New passwords do not match");
+      return;
+    }
+    if (newPassword.length < 8) {
+      toast.error("New password must be at least 8 characters");
+      return;
+    }
+    setPasswordChanging(true);
+    try {
+      const res = await changePassword({ current_password: currentPassword, new_password: newPassword });
+      if (res.success) {
+        toast.success("Password changed successfully");
+        setCurrentPassword("");
+        setNewPassword("");
+        setConfirmPassword("");
+      } else {
+        toast.error(res.message || "Failed to change password");
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Failed to change password");
+    } finally {
+      setPasswordChanging(false);
+    }
+  };
 
   // Load passphrase from sessionStorage on mount
   useEffect(() => {
@@ -364,6 +405,90 @@ export default function SettingsPage() {
               </div>
             </div>
           </SectionCard>
+
+          {/* Change Password — Admin only */}
+          {isAdmin && (
+            <SectionCard title="Change Password" icon={KeyRound}>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                    Current Password
+                  </label>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <Input
+                      type={showCurrentPassword ? "text" : "password"}
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      placeholder="Enter current password..."
+                      className="flex-1 bg-secondary/50 border-white/5"
+                      autoComplete="off"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-9 w-9 p-0"
+                      onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                    >
+                      {showCurrentPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                    New Password
+                  </label>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <Input
+                      type={showNewPassword ? "text" : "password"}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Enter new password..."
+                      className="flex-1 bg-secondary/50 border-white/5"
+                      autoComplete="off"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-9 w-9 p-0"
+                      onClick={() => setShowNewPassword(!showNewPassword)}
+                    >
+                      {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                    Confirm New Password
+                  </label>
+                  <Input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Confirm new password..."
+                    className="flex-1 bg-secondary/50 border-white/5 mt-1.5"
+                    autoComplete="off"
+                  />
+                </div>
+
+                <div className="flex justify-end">
+                  <Button
+                    size="sm"
+                    className="gap-1.5"
+                    disabled={passwordChanging || !currentPassword || !newPassword || !confirmPassword}
+                    onClick={handleChangePassword}
+                  >
+                    {passwordChanging && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    <KeyRound className="h-3.5 w-3.5" />
+                    Change Password
+                  </Button>
+                </div>
+              </div>
+            </SectionCard>
+          )}
 
           {/* AI Configuration */}
           <SectionCard title="AI Configuration" icon={Brain}>

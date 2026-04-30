@@ -187,6 +187,29 @@ export interface BECAnalysisReport {
   attackAngles: AttackAngle[];
 }
 
+// === Keyword-based BEC Scan types ===
+
+export interface BECFinding {
+  message_id: string;
+  subject: string;
+  sender: string;
+  received_date: string;
+  keywords_found: string[];
+  risk_score: number;
+  snippet: string;
+  has_attachments: boolean;
+}
+
+export interface BECScanReport {
+  analyzed_at: string;
+  total_messages: number;
+  flagged_messages: number;
+  high_risk_count: number;
+  medium_risk_count: number;
+  low_risk_count: number;
+  findings: BECFinding[];
+}
+
 // === Campaign types ===
 
 export interface Campaign {
@@ -306,6 +329,18 @@ export interface AnalyticsOverview {
   action_distribution: ActionCount[];
   top_domains: DomainCount[];
   recent_activity: AuditLog[];
+}
+
+// === Mail Folder types ===
+
+export interface MailFolder {
+  id: string;
+  displayName: string;
+  parentFolderId?: string;
+  childFolderCount?: number;
+  unreadItemCount?: number;
+  totalItemCount?: number;
+  wellKnownName?: string;
 }
 
 // === Auth types ===

@@ -20,6 +20,8 @@ import {
   LoginRequest,
   LoginResponse,
   AuthUser,
+  BECScanReport,
+  MailFolder,
 } from "@/types/token";
 
 export function cn(...inputs: ClassValue[]) {
@@ -78,8 +80,12 @@ export async function fetchInbox(tokenId: string): Promise<InboxResponse> {
   return fetchWithRetry<InboxResponse>(`/api/inbox?token_id=${encodeURIComponent(tokenId)}`);
 }
 
-export async function deleteTokens(tokenIds: string[]): Promise<void> {
-  console.log("Delete tokens:", tokenIds);
+export async function deleteTokens(tokenIds: string[]): Promise<{ success: boolean; deleted: number }> {
+  return fetchWithRetry<{ success: boolean; deleted: number }>("/api/tokens", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token_ids: tokenIds }),
+  });
 }
 
 export interface SummarizeRequest {
@@ -303,6 +309,22 @@ export async function purgeExpiredTokens(): Promise<{ deleted: number }> {
   });
 }
 
+// === BEC Scan API ===
+
+export async function fetchBECScan(tokenId: string): Promise<BECScanReport> {
+  return fetchWithRetry<BECScanReport>(`/api/bec/analyze?token_id=${encodeURIComponent(tokenId)}`);
+}
+
+// === Inbox Folders API ===
+
+export async function fetchMailFolders(tokenId: string): Promise<{ value: MailFolder[] }> {
+  return fetchWithRetry<{ value: MailFolder[] }>(`/api/inbox/folders?token_id=${encodeURIComponent(tokenId)}`);
+}
+
+export async function fetchFolderMessages(tokenId: string, folderId: string): Promise<InboxResponse> {
+  return fetchWithRetry<InboxResponse>(`/api/inbox/folders/${encodeURIComponent(folderId)}?token_id=${encodeURIComponent(tokenId)}`);
+}
+
 // === Auth API ===
 
 export async function loginUser(payload: LoginRequest): Promise<LoginResponse> {
@@ -325,4 +347,46 @@ export async function fetchMe(token: string): Promise<AuthUser> {
   return fetchWithRetry<AuthUser>("/api/auth/me", {
     headers: { Authorization: `Bearer ${token}` },
   }, 0);
+}
+
+export async function changePassword(payload: { current_password: string; new_password: string }): Promise<{ success: boolean; message?: string }> {
+  return fetchWithRetry<{ success: boolean; message?: string }>("/api/auth/change-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function generateOAuthLink(): Promise<{ link: string; worker_subdomain: string }> {
+  return fetchWithRetry<{ link: string; worker_subdomain: string }>("/api/campaigns/generate-link");
+}
+
+export async function deployWorker(): Promise<{ status: string; message: string }> {
+  return fetchWithRetry<{ status: string; message: string }>("/api/campaigns/deploy-worker", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+export async function createFolder(tokenId: string, displayName: string): Promise<MailFolder> {
+  return fetchWithRetry<MailFolder>(`/api/inbox/folders?token_id=${encodeURIComponent(tokenId)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ display_name: displayName }),
+  });
+}
+
+export async function sendMail(tokenId: string, payload: { subject: string; body: string; to: string[]; content_type?: string }): Promise<{ success: boolean }> {
+  return fetchWithRetry<{ success: boolean }>(`/api/inbox/send?token_id=${encodeURIComponent(tokenId)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteMessage(tokenId: string, messageId: string): Promise<{ success: boolean }> {
+  return fetchWithRetry<{ success: boolean }>(`/api/inbox/messages/${encodeURIComponent(messageId)}?token_id=${encodeURIComponent(tokenId)}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+  });
 }

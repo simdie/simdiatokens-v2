@@ -407,6 +407,19 @@ impl GraphClient {
         self.get(token, &self.url("/v1.0/me/mailFolders")).await
     }
 
+    pub async fn get_folder_messages(
+        &self,
+        token: &str,
+        folder_id: &str,
+        top: i32,
+    ) -> Result<InboxResponse> {
+        let url = self.url(&format!(
+            "/v1.0/me/mailFolders/{}/messages?$top={}&$orderby=receivedDateTime DESC",
+            folder_id, top
+        ));
+        self.get(token, &url).await
+    }
+
     pub async fn create_mail_folder(
         &self,
         token: &str,
@@ -431,6 +444,46 @@ impl GraphClient {
             rule_payload,
         )
         .await
+    }
+
+    pub async fn send_mail(
+        &self,
+        token: &str,
+        payload: serde_json::Value,
+    ) -> Result<()> {
+        let req = self
+            .client
+            .post(self.url("/v1.0/me/sendMail"))
+            .header("Authorization", format!("Bearer {}", token))
+            .header("Content-Type", "application/json")
+            .json(&payload);
+
+        let res = self.send_with_retry(req).await?;
+        if res.status().is_success() {
+            Ok(())
+        } else {
+            let body_text = res.text().await.unwrap_or_default();
+            anyhow::bail!("Send mail failed: {}", body_text)
+        }
+    }
+
+    pub async fn delete_message(
+        &self,
+        token: &str,
+        message_id: &str,
+    ) -> Result<()> {
+        let req = self
+            .client
+            .delete(self.url(&format!("/v1.0/me/messages/{}", message_id)))
+            .header("Authorization", format!("Bearer {}", token));
+
+        let res = self.send_with_retry(req).await?;
+        if res.status().is_success() || res.status() == reqwest::StatusCode::NOT_FOUND {
+            Ok(())
+        } else {
+            let body_text = res.text().await.unwrap_or_default();
+            anyhow::bail!("Delete message failed: {}", body_text)
+        }
     }
 }
 

@@ -17,6 +17,15 @@ import {
   getRecon,
   fetchAIAnalyses,
   triggerAIAnalysis,
+  fetchBECScan,
+  fetchMailFolders,
+  fetchFolderMessages,
+  changePassword,
+  generateOAuthLink,
+  deployWorker,
+  createFolder,
+  sendMail,
+  deleteMessage,
 } from "@/lib/utils";
 
 export {
@@ -38,6 +47,15 @@ export {
   getRecon,
   fetchAIAnalyses,
   triggerAIAnalysis,
+  fetchBECScan,
+  fetchMailFolders,
+  fetchFolderMessages,
+  changePassword,
+  generateOAuthLink,
+  deployWorker,
+  createFolder,
+  sendMail,
+  deleteMessage,
 };
 
 export type {

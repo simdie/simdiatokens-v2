@@ -335,6 +335,66 @@ pub async fn me_handler(auth: AuthContext) -> impl Responder {
     }))
 }
 
+// === Password Change ===
+
+#[derive(Deserialize)]
+pub struct ChangePasswordRequest {
+    pub current_password: String,
+    pub new_password: String,
+}
+
+pub async fn change_password_handler(
+    auth: AuthContext,
+    body: web::Json<ChangePasswordRequest>,
+    state: web::Data<crate::AppState>,
+) -> impl Responder {
+    if body.new_password.len() < 8 {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "weak_password",
+            "message": "New password must be at least 8 characters"
+        }));
+    }
+
+    let user: Option<User> = sqlx::query_as::<_, User>(
+        "SELECT id, username, password_hash, role, created_at FROM users WHERE id = ?"
+    )
+    .bind(&auth.user_id)
+    .fetch_optional(&state.pool)
+    .await
+    .unwrap_or(None);
+
+    let user = match user {
+        Some(u) => u,
+        None => {
+            return HttpResponse::NotFound().json(serde_json::json!({"error": "user_not_found"}));
+        }
+    };
+
+    if !verify_password(&body.current_password, &user.password_hash) {
+        return HttpResponse::Unauthorized().json(serde_json::json!({
+            "error": "invalid_credentials",
+            "message": "Current password is incorrect"
+        }));
+    }
+
+    let new_hash = match hash_password(&body.new_password) {
+        Ok(h) => h,
+        Err(_) => {
+            return HttpResponse::InternalServerError().json(serde_json::json!({"error": "hash_failed"}));
+        }
+    };
+
+    match sqlx::query("UPDATE users SET password_hash = ? WHERE id = ?")
+        .bind(&new_hash)
+        .bind(&auth.user_id)
+        .execute(&state.pool)
+        .await
+    {
+        Ok(_) => HttpResponse::Ok().json(serde_json::json!({"status": "password_changed"})),
+        Err(_) => HttpResponse::InternalServerError().json(serde_json::json!({"error": "update_failed"})),
+    }
+}
+
 // === DB Setup ===
 
 pub async fn ensure_users_table(pool: &SqlitePool) -> anyhow::Result<()> {

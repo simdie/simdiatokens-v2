@@ -345,6 +345,7 @@ mod tests {
             telegram_bot_token: None,
             telegram_chat_id: None,
             master_secret: "test_rules_secret".to_string(),
+            frontend_url: None,
         };
 
         let vault = Vault::new(config.master_secret.clone());

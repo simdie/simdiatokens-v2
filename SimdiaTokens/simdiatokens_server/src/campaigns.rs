@@ -485,6 +485,7 @@ mod tests {
             telegram_bot_token: None,
             telegram_chat_id: None,
             master_secret: "test_campaign_secret".to_string(),
+            frontend_url: None,
         };
 
         let vault = crate::vault::Vault::new(config.master_secret.clone());

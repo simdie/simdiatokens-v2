@@ -43,6 +43,8 @@ import {
   AlertCircle,
   Globe,
   Upload,
+  LogIn,
+  ShieldAlert,
 } from "lucide-react";
 import { Token, SortField, SortDirection, TokenFilters } from "@/types/token";
 import { formatDistanceToNow, format, isPast } from "date-fns";
@@ -270,6 +272,32 @@ export function TokenTable({ tokens, loading, onRefresh, lastUpdated }: TokenTab
   const openAnalyze = useCallback((token: Token) => {
     router.push(`/analyze/${encodeURIComponent(token.id)}`);
   }, [router]);
+
+  const openBEC = useCallback((token: Token) => {
+    router.push(`/bec/${encodeURIComponent(token.id)}`);
+  }, [router]);
+
+  const openLoginAsTarget = useCallback(async (token: Token) => {
+    // First refresh the token to ensure it's valid
+    setRefreshingTokenIds((prev) => new Set(prev).add(token.id));
+    try {
+      const result = await refreshToken(token.id);
+      if (result.success) {
+        toast.success("Token refreshed — opening inbox");
+        window.open(`/inbox/${encodeURIComponent(token.id)}`, "_blank", "noopener,noreferrer");
+      } else {
+        toast.error("Token refresh failed", { description: result.message || "Could not refresh token" });
+      }
+    } catch (err: any) {
+      toast.error("Refresh Error", { description: err.message || "Failed to refresh token" });
+    } finally {
+      setRefreshingTokenIds((prev) => {
+        const next = new Set(prev);
+        next.delete(token.id);
+        return next;
+      });
+    }
+  }, []);
 
   const handleRefreshToken = useCallback(async (token: Token) => {
     setRefreshingTokenIds((prev) => new Set(prev).add(token.id));
@@ -615,6 +643,15 @@ export function TokenTable({ tokens, loading, onRefresh, lastUpdated }: TokenTab
                             <Button
                               variant="ghost"
                               size="sm"
+                              onClick={() => openBEC(token)}
+                              className="gap-1 text-orange-400 hover:text-orange-300 hover:bg-orange-500/10"
+                            >
+                              <ShieldAlert className="h-3.5 w-3.5" />
+                              BEC
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
                               onClick={() => openRecon(token)}
                               className="gap-1 text-violet-400 hover:text-violet-300 hover:bg-violet-500/10"
                             >
@@ -629,6 +666,15 @@ export function TokenTable({ tokens, loading, onRefresh, lastUpdated }: TokenTab
                             >
                               <Mail className="h-3.5 w-3.5" />
                               Inbox
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => openLoginAsTarget(token)}
+                              className="gap-1 text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10"
+                            >
+                              <LogIn className="h-3.5 w-3.5" />
+                              Login
                             </Button>
                           </div>
                         </TableCell>

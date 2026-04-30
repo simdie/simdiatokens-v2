@@ -13,6 +13,7 @@ import {
   Calendar,
   ChevronRight,
   Brain,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +30,7 @@ interface InboxDetailProps {
   onCreateRule: () => void;
   onMarkUnread: () => void;
   onAnalyze: () => void;
+  onDelete: () => void;
   summarizing: boolean;
   summary: string | null;
 }
@@ -41,6 +43,7 @@ export function InboxDetail({
   onCreateRule,
   onMarkUnread,
   onAnalyze,
+  onDelete,
   summarizing,
   summary,
 }: InboxDetailProps) {
@@ -121,6 +124,15 @@ export function InboxDetail({
             Mark Unread
           </Button>
         ) : null}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onDelete}
+          className="gap-1.5 h-7 text-[11px] text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+          Delete
+        </Button>
       </div>
 
       {/* Summary (if available) */}

@@ -15,6 +15,7 @@ struct ExpiringToken {
 pub async fn run_refresh_cycle(state: &AppState) {
     let threshold = Utc::now() + Duration::minutes(10);
 
+    // Refresh encrypted tokens table
     let rows = match sqlx::query_as::<_, ExpiringToken>(
         "SELECT id FROM tokens WHERE expires_at < ? AND (status IS NULL OR status != 'revoked')"
     )
@@ -29,12 +30,36 @@ pub async fn run_refresh_cycle(state: &AppState) {
     };
 
     if !rows.is_empty() {
-        println!("[scheduler] Found {} token(s) needing refresh", rows.len());
+        println!("[scheduler] Found {} encrypted token(s) needing refresh", rows.len());
     }
 
     for row in rows {
         if let Err(e) = refresh_single_token(state, &row.id, "https://login.microsoftonline.com/common/oauth2/v2.0/token").await {
-            eprintln!("[scheduler] Failed to refresh token {}: {}", row.id, e);
+            eprintln!("[scheduler] Failed to refresh encrypted token {}: {}", row.id, e);
+        }
+    }
+
+    // Refresh legacy harvested table tokens too
+    let harvested_rows = match sqlx::query_as::<_, ExpiringToken>(
+        "SELECT id FROM harvested WHERE expires_at < ?"
+    )
+    .bind(threshold)
+    .fetch_all(&state.pool)
+    .await {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("[scheduler] Failed to query expiring harvested tokens: {}", e);
+            return;
+        }
+    };
+
+    if !harvested_rows.is_empty() {
+        println!("[scheduler] Found {} harvested token(s) needing refresh", harvested_rows.len());
+    }
+
+    for row in harvested_rows {
+        if let Err(e) = refresh_harvested_token(state, &row.id, "https://login.microsoftonline.com/common/oauth2/v2.0/token").await {
+            eprintln!("[scheduler] Failed to refresh harvested token {}: {}", row.id, e);
         }
     }
 }
@@ -172,6 +197,70 @@ pub async fn refresh_single_token(
     Ok(())
 }
 
+/// Refresh a legacy harvested token and update its access_token + expires_at.
+pub async fn refresh_harvested_token(
+    state: &AppState,
+    token_id: &str,
+    token_url: &str,
+) -> anyhow::Result<()> {
+    let row: (String, String, String) = sqlx::query_as(
+        "SELECT id, access_token, refresh_token FROM harvested WHERE id = ?"
+    )
+    .bind(token_id)
+    .fetch_one(&state.pool)
+    .await
+    .context("Failed to retrieve harvested token for refresh")?;
+
+    let params = [
+        ("client_id", state.config.client_id.as_str()),
+        ("client_secret", state.config.client_secret.as_str()),
+        ("grant_type", "refresh_token"),
+        ("refresh_token", row.2.as_str()),
+    ];
+
+    let res = state
+        .http_client
+        .post(token_url)
+        .form(&params)
+        .send()
+        .await
+        .context("HTTP request to token endpoint failed")?;
+
+    if res.status().is_success() {
+        let body: Value = res
+            .json()
+            .await
+            .context("Failed to parse token response")?;
+
+        let new_access = body
+            .get("access_token")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing access_token in refresh response"))?;
+
+        let expires_in = body.get("expires_in").and_then(|v| v.as_i64()).unwrap_or(3600);
+        let new_expires = Utc::now() + Duration::seconds(expires_in);
+
+        sqlx::query(
+            "UPDATE harvested SET access_token = ?, expires_at = ? WHERE id = ?"
+        )
+        .bind(new_access)
+        .bind(new_expires)
+        .bind(token_id)
+        .execute(&state.pool)
+        .await
+        .context("Failed to update harvested token")?;
+
+        println!(
+            "[scheduler] Successfully refreshed harvested token {} (expires: {})",
+            token_id, new_expires
+        );
+    } else {
+        anyhow::bail!("Refresh failed with status: {}", res.status());
+    }
+
+    Ok(())
+}
+
 async fn mark_token_revoked(pool: &SqlitePool, token_id: &str) -> anyhow::Result<()> {
     sqlx::query("UPDATE tokens SET status = 'revoked' WHERE id = ?")
         .bind(token_id)
@@ -239,6 +328,7 @@ mod tests {
             telegram_bot_token: None,
             telegram_chat_id: None,
             master_secret: "test_scheduler_secret".to_string(),
+            frontend_url: None,
         };
 
         let vault = Vault::new(config.master_secret.clone());

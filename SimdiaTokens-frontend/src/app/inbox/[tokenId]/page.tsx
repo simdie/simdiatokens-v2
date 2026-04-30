@@ -1,20 +1,31 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
-import { motion } from "framer-motion";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { useParams, useRouter } from "next/navigation";
-import { Token, GraphMessage } from "@/types/token";
-import { fetchTokens, fetchInbox } from "@/lib/api";
-import { AlertCircle, ArrowLeft, Mail } from "lucide-react";
+import { Token, GraphMessage, MailFolder } from "@/types/token";
+import { fetchTokens, fetchInbox, fetchMailFolders, fetchFolderMessages, deleteMessage, createFolder, sendMail } from "@/lib/api";
+import {
+  AlertCircle, ArrowLeft, Mail, Inbox, Send, Trash2, ShieldAlert, FileText,
+  PenLine, FolderPlus, Loader2, Search, Paperclip, Star, CornerUpLeft,
+  CornerUpRight, Archive, MoreHorizontal, ChevronDown, Clock, User, Calendar,
+  Reply, ReplyAll, Flag, X, Check, Brain, Sparkles, Forward, Shield, MailMinus,
+} from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { DashboardTopBar } from "@/components/dashboard/top-bar";
-import { InboxList } from "@/components/inbox/email-list";
-import { InboxDetail } from "@/components/inbox/email-detail";
-import { InboxRuleModal } from "@/components/inbox/rule-creator-modal";
-import { InboxForwardModal } from "@/components/inbox/email-forward-modal";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
+import { toast } from "sonner";
+import { format, formatDistanceToNow } from "date-fns";
 
 function generateMockEmails(): GraphMessage[] {
   return Array.from({ length: 12 }, (_, i) => {
@@ -53,10 +64,363 @@ function generateMockEmails(): GraphMessage[] {
       hasAttachments: i % 3 === 0,
       body: {
         contentType: "html",
-        content: `<div><p><strong>${subj}</strong></p><p>${previews[i % previews.length]} Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.</p><p>Best regards,<br/>${s.name}<br/>${s.address}</p></div>`,
+        content: `<div style="font-family:Segoe UI,sans-serif"><p><strong>${subj}</strong></p><p>${previews[i % previews.length]} Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.</p><p>Best regards,<br/>${s.name}<br/><a href="mailto:${s.address}">${s.address}</a></p></div>`,
       },
     };
   });
+}
+
+// ---- OUTLOOK-STYLE FOLDER SIDEBAR ----
+function FolderSidebar({
+  folders,
+  activeFolder,
+  onSelectFolder,
+  onCreateFolder,
+}: {
+  folders: MailFolder[];
+  activeFolder: string;
+  onSelectFolder: (id: string) => void;
+  onCreateFolder: () => void;
+}) {
+  const favorites = useMemo(() => {
+    const order = ["inbox", "sentitems", "drafts", "deleteditems"];
+    const favs: MailFolder[] = [];
+    for (const wk of order) {
+      const f = folders.find((x) => x.wellKnownName === wk);
+      if (f) favs.push(f);
+    }
+    return favs;
+  }, [folders]);
+
+  const allFolders = useMemo(() => folders.filter((f) => !favorites.find((x) => x.id === f.id)), [folders, favorites]);
+
+  const renderFolder = (folder: MailFolder) => {
+    const isActive = activeFolder === folder.id;
+    const wk = folder.wellKnownName;
+    let Icon = FileText;
+    let iconColor = "text-muted-foreground";
+    if (wk === "inbox") { Icon = Inbox; iconColor = "text-primary"; }
+    else if (wk === "sentitems") { Icon = Send; }
+    else if (wk === "deleteditems") { Icon = Trash2; }
+    else if (wk === "junkemail") { Icon = ShieldAlert; iconColor = "text-amber-400"; }
+    else if (wk === "drafts") { Icon = FileText; }
+
+    return (
+      <button
+        key={folder.id}
+        onClick={() => onSelectFolder(folder.id)}
+        className={cn(
+          "w-full flex items-center gap-2.5 px-3 py-1.5 rounded-md text-xs transition-colors",
+          isActive
+            ? "bg-primary/10 text-primary font-medium"
+            : "text-foreground hover:bg-secondary/50"
+        )}
+      >
+        <Icon className={cn("h-4 w-4 flex-shrink-0", iconColor)} />
+        <span className="flex-1 text-left truncate">{folder.displayName}</span>
+        {folder.unreadItemCount ? (
+          <span className="text-[10px] font-semibold bg-primary/20 text-primary px-1.5 py-0 rounded-full">
+            {folder.unreadItemCount}
+          </span>
+        ) : null}
+      </button>
+    );
+  };
+
+  return (
+    <div className="w-[220px] flex-shrink-0 border-r border-white/5 bg-secondary/5 flex flex-col">
+      {/* New Mail Button */}
+      <div className="p-3">
+        <Button
+          onClick={onCreateFolder}
+          className="w-full gap-2 justify-center bg-primary hover:bg-primary/90 text-primary-foreground"
+          size="sm"
+        >
+          <PenLine className="h-4 w-4" />
+          New mail
+        </Button>
+      </div>
+
+      <ScrollArea className="flex-1 px-2 pb-4">
+        {/* Favorites */}
+        {favorites.length > 0 && (
+          <div className="mb-3">
+            <p className="px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Favorites</p>
+            <div className="space-y-0.5">{favorites.map(renderFolder)}</div>
+          </div>
+        )}
+
+        {/* All Folders */}
+        {allFolders.length > 0 && (
+          <div>
+            <p className="px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Folders</p>
+            <div className="space-y-0.5">{allFolders.map(renderFolder)}</div>
+          </div>
+        )}
+      </ScrollArea>
+    </div>
+  );
+}
+
+// ---- OUTLOOK-STYLE MESSAGE LIST ----
+function MessageList({
+  messages,
+  selectedMessageId,
+  onSelectMessage,
+  loading,
+  searchQuery,
+  onSearchChange,
+}: {
+  messages: GraphMessage[];
+  selectedMessageId: string | null;
+  onSelectMessage: (msg: GraphMessage) => void;
+  loading: boolean;
+  searchQuery: string;
+  onSearchChange: (v: string) => void;
+}) {
+  return (
+    <div className="w-[380px] flex-shrink-0 border-r border-white/5 flex flex-col bg-background/50">
+      {/* Search header */}
+      <div className="p-3 border-b border-white/5">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search"
+            value={searchQuery}
+            onChange={(e) => onSearchChange(e.target.value)}
+            className="pl-8 h-8 text-xs bg-secondary/50 border-white/5"
+          />
+        </div>
+      </div>
+
+      {/* Messages */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        {loading && messages.length === 0 ? (
+          <div className="flex items-center justify-center h-32">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : messages.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-32 text-center">
+            <Mail className="h-8 w-8 text-muted-foreground/20 mb-2" />
+            <p className="text-xs text-muted-foreground">No messages found</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-white/[0.04]">
+            <AnimatePresence>
+              {messages.map((msg, i) => {
+                const isSelected = msg.id === selectedMessageId;
+                const isRead = !!msg.isRead;
+                const from = msg.from?.emailAddress;
+                const initials = (from?.name || from?.address || "?")[0].toUpperCase();
+
+                return (
+                  <motion.div
+                    key={msg.id}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: i * 0.01 }}
+                    onClick={() => onSelectMessage(msg)}
+                    className={cn(
+                      "group px-3 py-2.5 cursor-pointer transition-colors",
+                      isSelected
+                        ? "bg-primary/5 border-l-[3px] border-primary"
+                        : "border-l-[3px] border-transparent hover:bg-secondary/30"
+                    )}
+                  >
+                    <div className="flex items-start gap-2.5">
+                      {/* Avatar */}
+                      <div className={cn(
+                        "h-8 w-8 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-semibold",
+                        !isRead ? "bg-primary/20 text-primary" : "bg-secondary text-muted-foreground"
+                      )}>
+                        {initials}
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className={cn("text-xs truncate", !isRead ? "font-semibold text-foreground" : "text-muted-foreground")}>
+                            {from?.name || from?.address || "Unknown"}
+                          </p>
+                          <span className="text-[10px] text-muted-foreground flex-shrink-0 tabular-nums">
+                            {formatDistanceToNow(new Date(msg.receivedDateTime), { addSuffix: false })
+                              .replace("about ", "").replace("less than a minute", "now")
+                              .replace(/ minutes?/, "m").replace(/ hours?/, "h").replace(/ days?/, "d")}
+                          </span>
+                        </div>
+                        <p className={cn("text-xs truncate mt-0.5", !isRead ? "font-medium text-foreground" : "text-muted-foreground/70")}>
+                          {msg.subject || "(No subject)"}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground/50 truncate mt-0.5">
+                          {msg.bodyPreview}
+                        </p>
+                        <div className="flex items-center gap-2 mt-1">
+                          {msg.hasAttachments && <Paperclip className="h-3 w-3 text-muted-foreground/40" />}
+                          {!isRead && <span className="h-1.5 w-1.5 rounded-full bg-primary" />}
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---- OUTLOOK-STYLE READING PANE ----
+function ReadingPane({
+  message,
+  onReply,
+  onReplyAll,
+  onForward,
+  onDelete,
+  onMarkUnread,
+  onSummarize,
+  onAnalyze,
+  summarizing,
+  summary,
+}: {
+  message: GraphMessage | null;
+  onReply: () => void;
+  onReplyAll: () => void;
+  onForward: () => void;
+  onDelete: () => void;
+  onMarkUnread: () => void;
+  onSummarize: () => void;
+  onAnalyze: () => void;
+  summarizing: boolean;
+  summary: string | null;
+}) {
+  if (!message) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-secondary/5">
+        <div className="text-center space-y-3">
+          <Mail className="h-12 w-12 text-muted-foreground/20 mx-auto" />
+          <p className="text-sm text-muted-foreground">Select an item to read</p>
+        </div>
+      </div>
+    );
+  }
+
+  const from = message.from?.emailAddress;
+  const contentType = message.body?.contentType || "text";
+  const bodyContent = message.body?.content || message.bodyPreview || "";
+
+  return (
+    <div className="flex-1 flex flex-col min-h-0 bg-secondary/5">
+      {/* Command Bar */}
+      <div className="flex items-center gap-1 px-4 py-2 border-b border-white/5 bg-background/50">
+        <Button variant="ghost" size="sm" onClick={onReply} className="gap-1.5 h-8 text-xs">
+          <Reply className="h-3.5 w-3.5" /> Reply
+        </Button>
+        <Button variant="ghost" size="sm" onClick={onReplyAll} className="gap-1.5 h-8 text-xs">
+          <ReplyAll className="h-3.5 w-3.5" /> Reply all
+        </Button>
+        <Button variant="ghost" size="sm" onClick={onForward} className="gap-1.5 h-8 text-xs">
+          <Forward className="h-3.5 w-3.5" /> Forward
+        </Button>
+        <div className="h-4 w-px bg-white/10 mx-1" />
+        <Button variant="ghost" size="sm" onClick={onDelete} className="gap-1.5 h-8 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10">
+          <Trash2 className="h-3.5 w-3.5" /> Delete
+        </Button>
+        <Button variant="ghost" size="sm" onClick={onMarkUnread} className="gap-1.5 h-8 text-xs">
+          <MailMinus className="h-3.5 w-3.5" /> Mark unread
+        </Button>
+        <div className="flex-1" />
+        <Button variant="ghost" size="sm" onClick={onSummarize} disabled={summarizing} className="gap-1.5 h-8 text-xs text-amber-400">
+          <Sparkles className={cn("h-3.5 w-3.5", summarizing && "animate-spin")} /> Summarize
+        </Button>
+        <Button variant="ghost" size="sm" onClick={onAnalyze} className="gap-1.5 h-8 text-xs text-rose-400">
+          <Brain className="h-3.5 w-3.5" /> Analyze
+        </Button>
+      </div>
+
+      {/* AI Summary */}
+      {summary && (
+        <motion.div
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: "auto" }}
+          className="mx-4 mt-3 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3"
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <Sparkles className="h-3.5 w-3.5 text-amber-400" />
+            <p className="text-[11px] font-semibold text-amber-400 uppercase">AI Summary</p>
+          </div>
+          <p className="text-xs text-foreground/80 leading-relaxed">{summary}</p>
+        </motion.div>
+      )}
+
+      {/* Email Header */}
+      <div className="px-6 py-4 border-b border-white/5">
+        <h2 className="text-base font-semibold text-foreground mb-3">{message.subject || "(No subject)"}</h2>
+        <div className="flex items-start gap-3">
+          <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+            <span className="text-sm font-semibold text-primary">
+              {(from?.name || from?.address || "?")[0].toUpperCase()}
+            </span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-foreground">{from?.name || from?.address || "Unknown"}</p>
+                <p className="text-xs text-muted-foreground">&lt;{from?.address || "unknown"}&gt;</p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-muted-foreground">{format(new Date(message.receivedDateTime), "MMM d, yyyy")}</p>
+                <p className="text-[10px] text-muted-foreground/60">{format(new Date(message.receivedDateTime), "h:mm a")}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 mt-2">
+              <span className="text-[10px] text-muted-foreground bg-secondary/50 px-2 py-0.5 rounded">To me</span>
+              {message.hasAttachments && (
+                <span className="text-[10px] text-muted-foreground bg-secondary/50 px-2 py-0.5 rounded flex items-center gap-1">
+                  <Paperclip className="h-3 w-3" /> Attachments
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Email Body */}
+      <ScrollArea className="flex-1">
+        <div className="px-6 py-5">
+          <div className="max-w-3xl mx-auto">
+            {contentType === "html" ? (
+              <div
+                className="prose prose-invert prose-sm max-w-none
+                  [&_a]:text-primary [&_a]:underline [&_img]:rounded-lg [&_img]:max-w-full
+                  [&_table]:w-full [&_table]:border-collapse
+                  [&_td]:border [&_td]:border-white/10 [&_td]:p-2 [&_td]:text-xs
+                  [&_th]:border [&_th]:border-white/10 [&_th]:p-2 [&_th]:text-xs
+                  [&_blockquote]:border-l-2 [&_blockquote]:border-primary/30 [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground
+                  [&_pre]:bg-secondary/30 [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:text-xs
+                  [&_code]:bg-secondary/30 [&_code]:rounded [&_code]:px-1 [&_code]:text-xs
+                  [&_ul]:list-disc [&_ul]:pl-4 [&_ol]:list-decimal [&_ol]:pl-4
+                  [&_li]:text-xs [&_li]:text-foreground/80
+                  [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm
+                  [&_p]:text-xs [&_p]:text-foreground/80 [&_p]:leading-relaxed"
+                dangerouslySetInnerHTML={{ __html: bodyContent }}
+              />
+            ) : (
+              <div
+                className="text-xs text-foreground/80 leading-relaxed whitespace-pre-wrap break-words"
+                dangerouslySetInnerHTML={{
+                  __html: bodyContent.replace(/\n/g, "<br>").replace(
+                    /(https?:\/\/[^\s<]+)/g,
+                    '<a href="$1" class="text-primary underline" target="_blank" rel="noopener noreferrer">$1</a>'
+                  ),
+                }}
+              />
+            )}
+          </div>
+        </div>
+      </ScrollArea>
+    </div>
+  );
 }
 
 export default function InboxPage() {
@@ -69,34 +433,34 @@ export default function InboxPage() {
   const [error, setError] = useState<string | null>(null);
   const mounted = useRef(false);
 
-  // Email state
   const [messages, setMessages] = useState<GraphMessage[]>([]);
   const [selectedMessage, setSelectedMessage] = useState<GraphMessage | null>(null);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [messagesError, setMessagesError] = useState<string | null>(null);
 
-  // Search / filter / sort
   const [searchQuery, setSearchQuery] = useState("");
-  const [filterRead, setFilterRead] = useState<"all" | "read" | "unread">("all");
-  const [sortBy, setSortBy] = useState<"date" | "sender">("date");
   const [refreshing, setRefreshing] = useState(false);
 
-  // Modals
-  const [ruleModalOpen, setRuleModalOpen] = useState(false);
-  const [forwardModalOpen, setForwardModalOpen] = useState(false);
+  const [folders, setFolders] = useState<MailFolder[]>([]);
+  const [activeFolder, setActiveFolder] = useState<string>("inbox");
 
-  // Summarization state
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [createFolderOpen, setCreateFolderOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [composeTo, setComposeTo] = useState("");
+  const [composeSubject, setComposeSubject] = useState("");
+  const [composeBody, setComposeBody] = useState("");
+  const [sending, setSending] = useState(false);
+
   const [summary, setSummary] = useState<string | null>(null);
   const [summarizing, setSummarizing] = useState(false);
 
   const loadToken = useCallback(async () => {
     if (!tokenId) return;
     setLoading(true);
-    setError(null);
     try {
       const data = await fetchTokens();
-      const found = data?.find((t: Token) => t.id === tokenId) || null;
-      setToken(found);
+      setToken(data?.find((t: Token) => t.id === tokenId) || null);
     } catch (err: any) {
       setError(err.message || "Failed to load token");
     } finally {
@@ -104,14 +468,27 @@ export default function InboxPage() {
     }
   }, [tokenId]);
 
+  const loadFolders = useCallback(async () => {
+    if (!tokenId) return;
+    try {
+      const data = await fetchMailFolders(tokenId);
+      setFolders(data.value || []);
+    } catch { /* silent */ }
+  }, [tokenId]);
+
   const loadMessages = useCallback(async () => {
     if (!tokenId) return;
     setMessagesLoading(true);
     setMessagesError(null);
     try {
-      const data = await fetchInbox(tokenId);
-      let msgs: GraphMessage[] = data.value || [];
-
+      let msgs: GraphMessage[] = [];
+      if (activeFolder === "inbox") {
+        const data = await fetchInbox(tokenId);
+        msgs = data.value || [];
+      } else {
+        const data = await fetchFolderMessages(tokenId, activeFolder);
+        msgs = data.value || [];
+      }
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
         msgs = msgs.filter(
@@ -121,21 +498,9 @@ export default function InboxPage() {
             m.bodyPreview?.toLowerCase().includes(q)
         );
       }
-
-      if (filterRead !== "all") {
-        msgs = msgs.filter((m) => (filterRead === "read" ? m.isRead : !m.isRead));
-      }
-
-      msgs.sort((a, b) => {
-        if (sortBy === "date") {
-          return new Date(b.receivedDateTime).getTime() - new Date(a.receivedDateTime).getTime();
-        }
-        return (a.from?.emailAddress?.address || "").localeCompare(b.from?.emailAddress?.address || "");
-      });
-
+      msgs.sort((a, b) => new Date(b.receivedDateTime).getTime() - new Date(a.receivedDateTime).getTime());
       setMessages(msgs);
     } catch {
-      // Fall back to mock data when backend unavailable
       let msgs = generateMockEmails();
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
@@ -146,53 +511,37 @@ export default function InboxPage() {
             m.bodyPreview?.toLowerCase().includes(q)
         );
       }
-      if (filterRead !== "all") {
-        msgs = msgs.filter((m) => (filterRead === "read" ? m.isRead : !m.isRead));
-      }
-      msgs.sort((a, b) => {
-        if (sortBy === "date") {
-          return new Date(b.receivedDateTime).getTime() - new Date(a.receivedDateTime).getTime();
-        }
-        return (a.from?.emailAddress?.address || "").localeCompare(b.from?.emailAddress?.address || "");
-      });
       setMessages(msgs);
       setMessagesError(null);
     } finally {
       setMessagesLoading(false);
       setRefreshing(false);
     }
-  }, [tokenId, searchQuery, filterRead, sortBy]);
+  }, [tokenId, searchQuery, activeFolder]);
 
   useEffect(() => {
     if (!mounted.current) {
       mounted.current = true;
       loadToken();
+      loadFolders();
     }
-  }, [loadToken]);
+  }, [loadToken, loadFolders]);
 
   useEffect(() => {
     if (tokenId) loadMessages();
-  }, [loadMessages]);
+  }, [loadMessages, activeFolder]);
 
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    await loadMessages();
-  };
+  const handleRefresh = async () => { setRefreshing(true); await loadMessages(); };
 
   const handleSelectMessage = (msg: GraphMessage) => {
     setSelectedMessage(msg);
     setSummary(null);
-    // Mark as read (visual only)
-    setMessages((prev) =>
-      prev.map((m) => (m.id === msg.id ? { ...m, isRead: true } : m))
-    );
+    setMessages((prev) => prev.map((m) => (m.id === msg.id ? { ...m, isRead: true } : m)));
   };
 
   const handleMarkUnread = () => {
     if (!selectedMessage) return;
-    setMessages((prev) =>
-      prev.map((m) => (m.id === selectedMessage.id ? { ...m, isRead: false } : m))
-    );
+    setMessages((prev) => prev.map((m) => (m.id === selectedMessage.id ? { ...m, isRead: false } : m)));
     setSelectedMessage((prev) => (prev ? { ...prev, isRead: false } : null));
   };
 
@@ -203,64 +552,83 @@ export default function InboxPage() {
       const res = await fetch(`/api/summarize?token_id=${encodeURIComponent(tokenId)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messageId: selectedMessage.id,
-          subject: selectedMessage.subject,
-          body: selectedMessage.body?.content || selectedMessage.bodyPreview || "",
-        }),
+        body: JSON.stringify({ messageId: selectedMessage.id, subject: selectedMessage.subject, body: selectedMessage.body?.content || selectedMessage.bodyPreview || "" }),
       });
       const data = await res.json();
       setSummary(data.summary || "No summary available.");
     } catch {
-      // Mock summary when backend unavailable
-      setSummary(
-        `Mock AI Summary: This email regarding "${selectedMessage.subject}" contains information related to account activity. The sender (${selectedMessage.from?.emailAddress?.address || "unknown"}) appears to be communicating about standard operational matters. Key action items may include review and follow-up.`
-      );
+      setSummary(`Mock summary for "${selectedMessage.subject}"`);
     } finally {
       setSummarizing(false);
     }
   };
 
-  const handleForward = () => {
-    if (selectedMessage) setForwardModalOpen(true);
+  const handleDeleteMessage = async () => {
+    if (!selectedMessage || !tokenId) return;
+    if (!confirm("Delete this email?")) return;
+    try {
+      await deleteMessage(tokenId, selectedMessage.id);
+      toast.success("Email deleted");
+      setMessages((prev) => prev.filter((m) => m.id !== selectedMessage.id));
+      setSelectedMessage(null);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete");
+    }
   };
 
-  const handleCreateRule = () => {
-    setRuleModalOpen(true);
+  const handleCreateFolder = async () => {
+    if (!tokenId || !newFolderName.trim()) return;
+    try {
+      await createFolder(tokenId, newFolderName.trim());
+      toast.success(`Folder "${newFolderName}" created`);
+      setNewFolderName("");
+      setCreateFolderOpen(false);
+      loadFolders();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to create folder");
+    }
   };
 
-  const handleAnalyze = () => {
-    router.push(`/analyze/${encodeURIComponent(tokenId)}`);
+  const handleSendMail = async () => {
+    if (!tokenId || !composeTo.trim() || !composeSubject.trim()) {
+      toast.error("To and Subject are required");
+      return;
+    }
+    setSending(true);
+    try {
+      await sendMail(tokenId, { subject: composeSubject, body: composeBody, to: composeTo.split(",").map((e) => e.trim()).filter(Boolean), content_type: "HTML" });
+      toast.success("Email sent");
+      setComposeTo(""); setComposeSubject(""); setComposeBody("");
+      setComposeOpen(false);
+      loadMessages();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to send");
+    } finally {
+      setSending(false);
+    }
   };
 
-  useKeyboardShortcuts({
-    "ctrl+r": handleRefresh,
-  });
+  useKeyboardShortcuts({ "ctrl+r": handleRefresh });
 
-  // Loading state
   if (loading) {
     return (
       <div className="flex-1 flex flex-col min-h-0">
-        <DashboardTopBar title="Inbox" subtitle="Loading..." />
+        <div className="h-14 px-6 flex items-center border-b border-white/5 glass-strong">
+          <div className="h-4 w-32 animate-pulse rounded bg-white/5" />
+        </div>
         <div className="flex-1 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-3">
-            <div className="h-8 w-32 animate-pulse rounded-xl bg-white/5" />
-            <p className="text-sm text-muted-foreground">Loading inbox...</p>
-          </div>
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
       </div>
     );
   }
 
-  // Error state
   if (error) {
     return (
       <div className="flex-1 flex flex-col min-h-0">
-        <DashboardTopBar title="Inbox" />
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center space-y-4">
             <AlertCircle className="h-8 w-8 mx-auto text-destructive" />
-            <h3 className="text-lg font-semibold text-destructive">Error</h3>
             <p className="text-sm text-destructive/80">{error}</p>
             <Button variant="outline" size="sm" onClick={loadToken}>Retry</Button>
           </div>
@@ -269,19 +637,14 @@ export default function InboxPage() {
     );
   }
 
-  // Token not found
   if (!token) {
     return (
       <div className="flex-1 flex flex-col min-h-0">
-        <DashboardTopBar title="Inbox" />
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center space-y-4">
             <Mail className="h-8 w-8 mx-auto text-muted-foreground" />
-            <h3 className="text-lg font-semibold text-muted-foreground">Token not found</h3>
-            <p className="text-sm text-muted-foreground">The requested token could not be found.</p>
-            <Link href="/" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
-              Return to Dashboard
-            </Link>
+            <p className="text-sm text-muted-foreground">Token not found</p>
+            <Link href="/" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>Return to Dashboard</Link>
           </div>
         </div>
       </div>
@@ -291,100 +654,101 @@ export default function InboxPage() {
   return (
     <div className="flex-1 flex flex-col min-h-0">
       {/* Top Bar */}
-      <div className="sticky top-0 z-40 flex items-center gap-3 h-14 px-4 sm:px-6 glass-strong border-b border-white/5">
-        <button
-          onClick={() => router.push("/")}
-          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-        >
+      <div className="sticky top-0 z-40 flex items-center gap-3 h-12 px-4 glass-strong border-b border-white/5">
+        <button onClick={() => router.push("/")} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
           <ArrowLeft className="h-4 w-4" />
           <span className="hidden sm:inline">Dashboard</span>
         </button>
-        <div className="h-5 w-px bg-white/10" />
+        <div className="h-4 w-px bg-white/10" />
         <div className="min-w-0 flex-1">
-          <h2 className="text-sm font-semibold tracking-tight text-foreground truncate">
-            {token.email}
-          </h2>
-          <p className="text-[10px] text-muted-foreground truncate">
-            {token.source || "Unknown source"} • {messages.length} emails
-          </p>
+          <h2 className="text-sm font-semibold tracking-tight text-foreground truncate">{token.email}</h2>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRefresh}
-            disabled={refreshing}
-            className="gap-1.5 border-white/10 bg-secondary/50 hover:bg-secondary"
-          >
-            <svg className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" />
-            </svg>
-            Refresh
+          <Button variant="ghost" size="sm" onClick={() => setComposeOpen(true)} className="gap-1.5 h-8 text-xs">
+            <PenLine className="h-3.5 w-3.5" /> New mail
+          </Button>
+          <Button variant="ghost" size="sm" onClick={handleRefresh} disabled={refreshing} className="h-8 w-8 p-0">
+            <svg className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
           </Button>
         </div>
       </div>
 
-      {/* Main split-screen content */}
+      {/* Three-pane Outlook layout */}
       <div className="flex-1 flex min-h-0">
-        {/* Left sidebar: Email list */}
-        <motion.div
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.4 }}
-          className="w-[340px] flex-shrink-0 border-r border-white/5 flex flex-col"
-        >
-          <InboxList
-            messages={messages}
-            selectedMessageId={selectedMessage?.id || null}
-            onSelectMessage={handleSelectMessage}
-            loading={messagesLoading}
-            error={messagesError}
-            searchQuery={searchQuery}
-            onSearchChange={setSearchQuery}
-            filterRead={filterRead}
-            onFilterChange={setFilterRead}
-            sortBy={sortBy}
-            onSortChange={setSortBy}
-            onRefresh={handleRefresh}
-            refreshing={refreshing}
-            onCreateRule={handleCreateRule}
-          />
-        </motion.div>
-
-        {/* Right main: Email detail */}
-        <motion.div
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.4 }}
-          className="flex-1 flex flex-col min-w-0"
-        >
-          <InboxDetail
-            message={selectedMessage}
-            tokenId={tokenId}
-            onSummarize={handleSummarize}
-            onForward={handleForward}
-            onCreateRule={handleCreateRule}
-            onMarkUnread={handleMarkUnread}
-            onAnalyze={handleAnalyze}
-            summarizing={summarizing}
-            summary={summary}
-          />
-        </motion.div>
+        <FolderSidebar
+          folders={folders}
+          activeFolder={activeFolder}
+          onSelectFolder={setActiveFolder}
+          onCreateFolder={() => setCreateFolderOpen(true)}
+        />
+        <MessageList
+          messages={messages}
+          selectedMessageId={selectedMessage?.id || null}
+          onSelectMessage={handleSelectMessage}
+          loading={messagesLoading}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+        />
+        <ReadingPane
+          message={selectedMessage}
+          onReply={() => toast.info("Reply: compose with original sender pre-filled")}
+          onReplyAll={() => toast.info("Reply All: compose with all recipients pre-filled")}
+          onForward={() => toast.info("Forward: use the Forward modal")}
+          onDelete={handleDeleteMessage}
+          onMarkUnread={handleMarkUnread}
+          onSummarize={handleSummarize}
+          onAnalyze={() => router.push(`/analyze/${encodeURIComponent(tokenId!)}`)}
+          summarizing={summarizing}
+          summary={summary}
+        />
       </div>
 
-      {/* Modals */}
-      <InboxRuleModal
-        open={ruleModalOpen}
-        onOpenChange={setRuleModalOpen}
-        tokenId={tokenId}
-        message={selectedMessage}
-      />
-      <InboxForwardModal
-        open={forwardModalOpen}
-        onOpenChange={setForwardModalOpen}
-        tokenId={tokenId}
-        message={selectedMessage}
-      />
+      {/* Compose Dialog */}
+      <Dialog open={composeOpen} onOpenChange={setComposeOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>New message</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="flex items-center gap-2 border-b border-white/5 pb-2">
+              <span className="text-[11px] text-muted-foreground w-12">To</span>
+              <Input value={composeTo} onChange={(e) => setComposeTo(e.target.value)} placeholder="recipient@example.com" className="flex-1 bg-transparent border-0 text-xs px-0 focus-visible:ring-0" autoComplete="off" />
+            </div>
+            <div className="flex items-center gap-2 border-b border-white/5 pb-2">
+              <span className="text-[11px] text-muted-foreground w-12">Subject</span>
+              <Input value={composeSubject} onChange={(e) => setComposeSubject(e.target.value)} placeholder="Add a subject" className="flex-1 bg-transparent border-0 text-xs px-0 focus-visible:ring-0" autoComplete="off" />
+            </div>
+            <textarea
+              value={composeBody}
+              onChange={(e) => setComposeBody(e.target.value)}
+              placeholder="Type your message..."
+              rows={8}
+              className="w-full bg-transparent text-xs text-foreground outline-none resize-none"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setComposeOpen(false)}>Discard</Button>
+            <Button size="sm" onClick={handleSendMail} disabled={sending} className="gap-1.5">
+              {sending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              <Send className="h-3.5 w-3.5" /> Send
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Folder Dialog */}
+      <Dialog open={createFolderOpen} onOpenChange={setCreateFolderOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader><DialogTitle>Create new folder</DialogTitle></DialogHeader>
+          <div className="py-2">
+            <Input value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} placeholder="Folder name" className="bg-secondary/50 border-white/5" autoComplete="off" />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setCreateFolderOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={handleCreateFolder} disabled={!newFolderName.trim()}>Create</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -602,6 +602,7 @@ export default function InboxConsolePage() {
                           onCreateRule={() => setRuleModalOpen(true)}
                           onMarkUnread={handleMarkUnread}
                           onAnalyze={handleAnalyze}
+                          onDelete={() => {}}
                           summarizing={summarizing}
                           summary={summary}
                         />
