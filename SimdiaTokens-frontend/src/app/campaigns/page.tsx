@@ -223,13 +223,13 @@ export default function CampaignsPage() {
     setDeployLoading(true);
     try {
       const res = await deployWorker();
-      if (res.status === "not_implemented") {
-        toast.info("Worker Deployment", { description: res.message });
+      if (res.success) {
+        toast.success("Worker deployed", { description: res.worker_url || "" });
       } else {
-        toast.success("Worker deployed successfully");
+        toast.error("Deploy failed", { description: res.message || "Unknown error" });
       }
     } catch (err: any) {
-      toast.error(`Deploy failed: ${err.message}`);
+      toast.error("Deploy failed", { description: err.message || "Unknown error" });
     } finally {
       setDeployLoading(false);
     }

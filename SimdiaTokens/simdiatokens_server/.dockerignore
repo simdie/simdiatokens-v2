@@ -1,0 +1,11 @@
+/target
+**/*.rs.bk
+Cargo.lock
+.git
+.gitignore
+.env
+.railway.env
+.wrangler.env
+*.db
+*.db-journal
+node_modules

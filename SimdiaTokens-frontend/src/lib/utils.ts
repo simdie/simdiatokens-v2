@@ -361,8 +361,8 @@ export async function generateOAuthLink(): Promise<{ link: string; worker_subdom
   return fetchWithRetry<{ link: string; worker_subdomain: string }>("/api/campaigns/generate-link");
 }
 
-export async function deployWorker(): Promise<{ status: string; message: string }> {
-  return fetchWithRetry<{ status: string; message: string }>("/api/campaigns/deploy-worker", {
+export async function deployWorker(): Promise<{ success: boolean; worker_url?: string; message: string }> {
+  return fetchWithRetry<{ success: boolean; worker_url?: string; message: string }>("/api/campaigns/deploy-worker", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
   });
