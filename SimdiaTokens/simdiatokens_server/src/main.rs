@@ -551,7 +551,9 @@ async fn deploy_worker(state: web::Data<AppState>) -> impl Responder {
     let redirect_uri = format!("https://{}.{}/oauth/callback", script_name, workers_subdomain);
 
     // Build metadata with text bindings
+    // body_part tells Cloudflare which multipart part contains the script
     let metadata = serde_json::json!({
+        "body_part": "script",
         "bindings": [
             { "type": "plain_text", "name": "MAIN_SERVER", "text": main_server },
             { "type": "plain_text", "name": "CLIENT_ID", "text": state.config.client_id },
@@ -567,8 +569,12 @@ async fn deploy_worker(state: web::Data<AppState>) -> impl Responder {
     let form = reqwest::multipart::Form::new()
         .part("metadata", reqwest::multipart::Part::text(metadata.to_string())
             .mime_str("application/json").unwrap())
-        .part("index.js", reqwest::multipart::Part::text(WORKER_SCRIPT.to_string())
-            .mime_str("application/javascript+module").unwrap());
+        .part("script", reqwest::multipart::Part::text(WORKER_SCRIPT.to_string())
+            .file_name("index.js")
+            .mime_str("application/javascript").unwrap());
+
+    println!("[deploy] Uploading worker to {}", url);
+    println!("[deploy] Redirect URI: {}", redirect_uri);
 
     let res = match state.http_client
         .put(&url)
@@ -590,6 +596,8 @@ async fn deploy_worker(state: web::Data<AppState>) -> impl Responder {
     let status = res.status();
     let body_text = res.text().await.unwrap_or_default();
 
+    println!("[deploy] Cloudflare response {}: {}", status, body_text);
+
     if status.is_success() {
         let worker_url = format!("https://{}.{}", script_name, workers_subdomain);
         HttpResponse::Ok().json(DeployWorkerResponse {
@@ -598,7 +606,6 @@ async fn deploy_worker(state: web::Data<AppState>) -> impl Responder {
             message: "Worker deployed successfully".to_string(),
         })
     } else {
-        eprintln!("[deploy] Cloudflare API error {}: {}", status, body_text);
         HttpResponse::InternalServerError().json(serde_json::json!({
             "success": false,
             "message": format!("Cloudflare API returned {}: {}", status, body_text)
