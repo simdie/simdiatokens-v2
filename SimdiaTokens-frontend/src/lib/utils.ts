@@ -22,6 +22,7 @@ import {
   AuthUser,
   BECScanReport,
   MailFolder,
+  AuditLog,
 } from "@/types/token";
 
 export function cn(...inputs: ClassValue[]) {
@@ -455,4 +456,29 @@ export async function generateLureEmail(payload: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
+}
+
+export interface AuditLogsQuery {
+  from?: string;
+  to?: string;
+  action?: string;
+  campaign_id?: string;
+  page?: number;
+  per_page?: number;
+}
+
+export interface AuditLogsResponse {
+  logs: AuditLog[];
+  total: number;
+}
+
+export async function getAuditLogs(query: AuditLogsQuery = {}): Promise<AuditLogsResponse> {
+  const params = new URLSearchParams();
+  if (query.from) params.set("from", query.from);
+  if (query.to) params.set("to", query.to);
+  if (query.action) params.set("action", query.action);
+  if (query.campaign_id) params.set("campaign_id", query.campaign_id);
+  if (query.page) params.set("page", String(query.page));
+  if (query.per_page) params.set("per_page", String(query.per_page));
+  return fetchWithRetry<AuditLogsResponse>(`/api/audit/logs?${params.toString()}`);
 }

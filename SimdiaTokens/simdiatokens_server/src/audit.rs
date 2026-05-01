@@ -197,6 +197,12 @@ pub struct AuditLogQuery {
     pub per_page: Option<i64>,
 }
 
+#[derive(Serialize)]
+pub struct AuditLogsResponse {
+    pub logs: Vec<AuditLog>,
+    pub total: i64,
+}
+
 pub async fn audit_logs_handler(
     query: web::Query<AuditLogQuery>,
     state: web::Data<AppState>,
@@ -205,43 +211,53 @@ pub async fn audit_logs_handler(
     let per_page = query.per_page.unwrap_or(20).clamp(1, 100);
     let offset = (page - 1) * per_page;
 
-    let mut sql = String::from(
-        "SELECT id, timestamp, action, campaign_id, token_id, user_email, ip_address, user_agent, details, success FROM audit_logs WHERE 1=1"
-    );
-
+    let mut where_sql = String::from("WHERE 1=1");
     if query.from.is_some() {
-        sql.push_str(" AND timestamp >= ?");
+        where_sql.push_str(" AND timestamp >= ?");
     }
     if query.to.is_some() {
-        sql.push_str(" AND timestamp <= ?");
+        where_sql.push_str(" AND timestamp <= ?");
     }
     if query.action.is_some() {
-        sql.push_str(" AND action = ?");
+        where_sql.push_str(" AND action = ?");
     }
     if query.campaign_id.is_some() {
-        sql.push_str(" AND campaign_id = ?");
+        where_sql.push_str(" AND campaign_id = ?");
     }
 
-    sql.push_str(" ORDER BY timestamp DESC LIMIT ? OFFSET ?");
+    let data_sql = format!(
+        "SELECT id, timestamp, action, campaign_id, token_id, user_email, ip_address, user_agent, details, success FROM audit_logs {} ORDER BY timestamp DESC LIMIT ? OFFSET ?",
+        where_sql
+    );
 
-    let mut q = sqlx::query_as::<_, AuditLog>(&sql);
+    let count_sql = format!(
+        "SELECT COUNT(*) FROM audit_logs {}",
+        where_sql
+    );
+
+    let mut q = sqlx::query_as::<_, AuditLog>(&data_sql);
+    let mut cq = sqlx::query_scalar::<_, i64>(&count_sql);
 
     if let Some(from) = query.from {
         q = q.bind(from);
+        cq = cq.bind(from);
     }
     if let Some(to) = query.to {
         q = q.bind(to);
+        cq = cq.bind(to);
     }
     if let Some(ref action) = query.action {
         q = q.bind(action);
+        cq = cq.bind(action);
     }
     if let Some(ref campaign_id) = query.campaign_id {
         q = q.bind(campaign_id);
+        cq = cq.bind(campaign_id);
     }
     q = q.bind(per_page).bind(offset);
 
-    match q.fetch_all(&state.pool).await {
-        Ok(rows) => HttpResponse::Ok().json(rows),
+    match tokio::try_join!(q.fetch_all(&state.pool), cq.fetch_one(&state.pool)) {
+        Ok((logs, total)) => HttpResponse::Ok().json(AuditLogsResponse { logs, total }),
         Err(e) => {
             eprintln!("[audit] Query failed: {}", e);
             HttpResponse::InternalServerError().json(serde_json::json!({
