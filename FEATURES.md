@@ -1,7 +1,7 @@
 # SimdiaTokens — Feature Reference
 
 > Complete capability index for the SimdiaTokens adversary simulation platform.  
-> Last updated: 2026-04-30
+> Last updated: 2026-05-01
 
 ---
 
@@ -10,8 +10,9 @@
 ### OAuth2 Device Code Phishing
 - Generates Microsoft OAuth2 device-code URLs (`/api/campaigns`)
 - Uses real Azure AD application (`CLIENT_ID`)
-- Requests scopes: `Mail.ReadWrite`, `Mail.Send`, `User.Read`, `MailboxSettings.ReadWrite`, `openid`, `offline_access`
+- Requests scopes: `Mail.ReadWrite`, `Mail.Send`, `User.Read`, `Contacts.Read`, `MailboxSettings.ReadWrite`, `openid`, `offline_access`
 - **Mail.Send scope included** — enables sending emails from victim's account
+- **Contacts.Read scope included** — enables contact harvesting for lure targeting
 
 ### Campaign Lifecycle
 - Create campaigns with custom name, target client, and requested scopes
@@ -48,7 +49,8 @@
 
 ### Dashboard
 - Real-time token table with polling (15s interval)
-- Shows: email, source, expiry countdown, status badge, last activity
+- Shows: email, source, **captured at**, expiry countdown, status badge, last activity
+- **Analyze button removed** from Actions column (BEC, Recon, Inbox remain)
 - **Login button removed** — Graph API tokens cannot be converted to browser cookies
 - Keyboard shortcuts: `Ctrl+R` refresh, `Ctrl+K` quick search
 
@@ -75,17 +77,56 @@
 
 ### Conversation-Based Detection
 - Scans victim's inbox for **conversation threads with 2+ messages**
-- Matches against 30+ financial keywords: `invoice`, `payment`, `wire transfer`, `bank account`, `swift`, `IBAN`, `USD`, `$`, `million`, `thousand`, `business`, `money`, `transfer`, `receipt`, `payroll`, `deposit`, `escrow`, `ACH`, `routing number`, `account number`, `sort code`, `BIC`, `remittance`, `accounts payable`, `purchase order`, `PO number`, `contract`, `agreement`, `settlement`, `compensation`, `commission`, `dividend`, `refund`, `reimbursement`, `expense report`, `budget`, `forecast`, `revenue`, `profit`, `loss`, `quarterly`, `fiscal`, `tax`, `audit`, `compliance`, `risk`, `insurance`, `claim`, `premium`, `deductible`, `beneficiary`, `fiduciary`, `trust`, `estate`, `grant`, `funding`, `investment`, `capital`, `equity`, `debt`, `loan`, `mortgage`, `credit`, `debit`, `balance`, `statement`, `ledger`, `journal`, `reconciliation`, `accrual`, `amortization`, `depreciation`, `write-off`, `provision`, `reserve`, `allowance`, `impairment`, `goodwill`, `intangible`, `tangible`, `asset`, `liability`, `equity`, `shareholder`, `stakeholder`, `partner`, `vendor`, `supplier`, `contractor`, `consultant`, `advisor`, `broker`, `agent`, `representative`, `delegate`, `proxy`, `power of attorney`, `authorized signatory`, `approver`, `verifier`, `validator`, `auditor`, `examiner`, `inspector`, `regulator`, `governance`, `board`, `committee`, `council`, `executive`, `management`, `leadership`, `director`, `officer`, `C-suite`, `CEO`, `CFO`, `COO`, `CIO`, `CTO`, `CMO`, `CHRO`, `CRO`, `CSO`, `CLO`, `GC`, `VP`, `SVP`, `EVP`, `president`, `chairman`, `founder`, `principal`, `managing partner`, `senior partner`, `junior partner`, `associate`, `analyst`, `manager`, `supervisor`, `coordinator`, `administrator`, `assistant`, `secretary`, `clerk`, `teller`, `cashier`, `bookkeeper`, `accountant`, `controller`, `comptroller`, `treasurer`, `bursar`, `purser`, `paymaster`, `disburser`, `collector`, `receiver`, `custodian`, `guardian`, `trustee`, `executor`, `administrator`, `personal representative`, `conservator`, `curator`, `warden`, `keeper`, `steward`, `caretaker`, `janitor`, `porter`, `concierge`, `receptionist`, `host`, `hostess`, `usher`, `guide`, `escort`, `attendant`, `aide`, `adjutant`, `aide-de-camp`, `attaché`, `chargé d'affaires`, `consul`, `diplomat`, `envoy`, `emissary`, `legate`, `nuncio`, `intermediary`, `mediator`, `arbitrator`, `negotiator`, `broker`, `dealer`, `trader`, `merchant`, `vendor`, `seller`, `buyer`, `purchaser`, `procurer`, `acquirer`, `obtainer`, `getter`, `recipient`, `beneficiary`, `donee`, `grantee`, `assignee`, `transferee`, `heir`, `successor`, `inheritor`, `devisee`, `legatee`, `heirloom`
+- Matches against 100+ financial and crypto keywords: `invoice`, `payment`, `wire transfer`, `bank account`, `swift`, `IBAN`, `USD`, `$`, `million`, `thousand`, `business`, `money`, `transfer`, `receipt`, `payroll`, `deposit`, `escrow`, `ACH`, `routing number`, `account number`, `sort code`, `BIC`, `remittance`, `accounts payable`, `purchase order`, `PO number`, `contract`, `agreement`, `settlement`, `compensation`, `commission`, `dividend`, `refund`, `reimbursement`, `expense report`, `budget`, `forecast`, `revenue`, `profit`, `loss`, `quarterly`, `fiscal`, `tax`, `audit`, `compliance`, `risk`, `insurance`, `claim`, `premium`, `deductible`, `beneficiary`, `fiduciary`, `trust`, `estate`, `grant`, `funding`, `investment`, `capital`, `equity`, `debt`, `loan`, `mortgage`, `credit`, `debit`, `balance`, `statement`, `ledger`, `journal`, `reconciliation`, `accrual`, `amortization`, `depreciation`, `write-off`, `provision`, `reserve`, `allowance`, `impairment`, `goodwill`, `intangible`, `tangible`, `asset`, `liability`, `equity`, `shareholder`, `stakeholder`, `partner`, `vendor`, `supplier`, `contractor`, `consultant`, `advisor`, `broker`, `agent`, `representative`, `delegate`, `proxy`, `power of attorney`, `authorized signatory`, `approver`, `verifier`, `validator`, `auditor`, `examiner`, `inspector`, `regulator`, `governance`, `board`, `committee`, `council`, `executive`, `management`, `leadership`, `director`, `officer`, `C-suite`, `CEO`, `CFO`, `COO`, `CIO`, `CTO`, `CMO`, `CHRO`, `CRO`, `CSO`, `CLO`, `GC`, `VP`, `SVP`, `EVP`, `president`, `chairman`, `founder`, `principal`, `managing partner`, `senior partner`, `junior partner`, `associate`, `analyst`, `manager`, `supervisor`, `coordinator`, `administrator`, `assistant`, `secretary`, `clerk`, `teller`, `cashier`, `bookkeeper`, `accountant`, `controller`, `comptroller`, `treasurer`, `bursar`, `purser`, `paymaster`, `disburser`, `collector`, `receiver`, `custodian`, `guardian`, `trustee`, `executor`, `administrator`, `personal representative`, `conservator`, `curator`, `warden`, `keeper`, `steward`, `caretaker`, `janitor`, `porter`, `concierge`, `receptionist`, `host`, `hostess`, `usher`, `guide`, `escort`, `attendant`, `aide`, `adjutant`, `aide-de-camp`, `attaché`, `chargé d'affaires`, `consul`, `diplomat`, `envoy`, `emissary`, `legate`, `nuncio`, `intermediary`, `mediator`, `arbitrator`, `negotiator`, `broker`, `dealer`, `trader`, `merchant`, `vendor`, `seller`, `buyer`, `purchaser`, `procurer`, `acquirer`, `obtainer`, `getter`, `recipient`, `beneficiary`, `donee`, `grantee`, `assignee`, `transferee`, `heir`, `successor`, `inheritor`, `devisee`, `legatee`, `heirloom`, `cryptocurrency`, `USDT`, `binance`, `bybit`, `crypto`, `bitcoin`, `GBP`, `Pounds`, `AUD`, `NGN`, `AED`, `INR`, `CAD`, `EUR`, `euro`, `dollars`, `exchange`
 
 ### Scan Report
 - Shows expandable conversation threads
 - Displays keyword pills for matched terms
+- Expanded view shows sender email address and full body preview text
 - **No risk scores** — raw conversation data only
 - No dummy data — all from real Graph API
 
 ---
 
-## 5. AI Inbox Analysis
+## 5. Lure Email Composer
+
+### Contact Harvesting
+- Fetches victim's Outlook contacts via Graph API (`Contacts.Read` scope)
+- Contact picker with real-time search by name or email
+- **Office-only filter** with 3-layer detection:
+  1. **Static Microsoft domains**: hotmail, outlook, live, msn, microsoft, office365, onmicrosoft, sharepoint, exchange, owa
+  2. **MX-verified M365**: Backend DNS MX lookup detects enterprise domains using Microsoft 365 (`mail.protection.outlook.com`)
+  3. **Manual enterprise whitelist**: Comma-separated domain input persisted in localStorage
+- Toggle between "Show office only" and "Show all contacts"
+- Batch selection: checkboxes, Select All, Deselect All
+
+### Compose
+- To field with chip-style recipients (add/remove individual emails)
+- Recipient input supports: type + Enter, paste multiple emails, blur auto-commit
+- Subject and body fields
+- **Content type toggle**: HTML / Text
+- **Insert Link** button for OAuth phishing URLs
+- **Max recipients per send**: Configurable chunk size (default 5) — sends in batches
+
+### AI-Powered Lure Generation
+- Backend `POST /api/lure/generate` using OpenAI GPT-4o-mini
+- 3 templates: Shared Document, Meeting Follow-up, Invoice/Payment
+- Anti-spam system prompt: natural language variation, no spam trigger words, contextual personalization
+- **Preview dialog**: Review generated content with Apply / Regenerate / Cancel before updating composer
+- Shows anti-spam technique badges (e.g., "Natural language variation", "Contextual personalization")
+
+### Scheduled Send
+- Datetime-local picker for future delivery
+- Scheduled time shown in preview and approval dialogs
+
+### Admin Approval Gate
+- **Type "SEND" to confirm** — prevents accidental sends
+- Shows full send details: from address, recipients, subject, scheduled time
+- Warning banner: "This email will be sent from the victim's real Outlook account"
+
+---
+
+## 6. AI Inbox Analysis
 
 ### Trigger Analysis
 - Backend fetches last N messages via Graph API
@@ -100,7 +141,7 @@
 
 ---
 
-## 6. Reconnaissance
+## 7. Reconnaissance
 
 ### Data Collected
 - **User Profile** (`/me`): displayName, email, jobTitle, department, officeLocation, phone, company, city, state, country, employeeId
@@ -118,7 +159,7 @@
 
 ---
 
-## 7. Full Inbox Access
+## 8. Full Inbox Access
 
 ### Three-Pane Outlook-Style UI
 - **Folder Sidebar**: Inbox, Drafts, Sent Items, Deleted Items, Archive, Junk Email, Outbox, Conversation History — matches Outlook order exactly
@@ -127,8 +168,10 @@
 
 ### Email Operations
 - **Read**: Full body content (HTML + text) with `body` and `bodyPreview` fields
-- **Send**: Compose with To, Subject, Body, Attachments (any format, multiple files)
+- **Send**: Compose with To, Subject, Body, content type (HTML/Text toggle), Attachments (any format, multiple files)
+- **Reply / Reply All / Forward**: Pre-filled compose with original sender/all recipients/forward header; quoted original message included
 - **Delete**: Single soft delete (moves to Deleted Items) — fast, no HTTP 500
+- **Mark Read/Unread**: Syncs `isRead` status back to victim's Outlook mailbox via Graph API PATCH
 - **Search**: Real-time filtering by subject, sender, body preview
 - **Keyboard shortcuts**: `R` refresh, `N` new mail, `J/K` navigate, `Enter` open, `U` mark unread, `E` archive, `Shift+3` delete
 
@@ -136,18 +179,20 @@
 - Stored only in local SQLite (`local_folders` table)
 - Invisible to victim's real Outlook
 - `+ New` creates custom folders
-- `FILTERED` auto-populated by auto-filter button
+- `FILTERED` auto-populated by BEC Filter button
 - Messages copied to local `local_filtered_messages` table
+- **Delete local folder**: Hover-reveal trash icon; clears messages then deletes folder row
 
-### Auto-Filter
-- Scans inbox for BEC keywords
+### BEC Filter (Auto-Filter)
+- Scans inbox for BEC keywords (financial + crypto terms)
 - Copies matching emails to local "FILTERED" folder
 - Shows count of moved messages
 - One-click operation
+- Uses both `from` and `sender` fields for robust sender extraction
 
 ---
 
-## 8. Email Rules
+## 9. Email Rules
 
 ### Rule Management
 - Create forwarding rules via Graph API (`/me/mailFolders/inbox/messageRules`)
@@ -163,7 +208,7 @@
 
 ---
 
-## 9. Analytics & Telemetry
+## 10. Analytics & Telemetry
 
 ### KPIs
 - Active tokens, revoked tokens, total campaigns, rules created (30d)
@@ -187,13 +232,18 @@
 
 ---
 
-## 10. Authentication & Security
+## 11. Authentication & Security
 
 ### Admin Login
 - JWT-based authentication (`/api/auth/login`)
 - Default admin: `admin` / `admin12345`
 - JWT expires in 7 days
 - Protected routes with middleware
+
+### Barcode 2FA Authentication (Admin)
+- Settings page toggle to enable/disable TOTP-based 2FA
+- Shows backup code warning when enabled
+- UI-only toggle (backend TOTP verification to be implemented)
 
 ### Token Encryption
 - Refresh tokens encrypted with AES-256-GCM
@@ -202,7 +252,7 @@
 
 ---
 
-## 11. Deployment & Infrastructure
+## 12. Deployment & Infrastructure
 
 ### Backend (Railway)
 - Rust/Actix-web + SQLite
@@ -223,7 +273,7 @@
 
 ---
 
-## 12. API Endpoints (Backend)
+## 13. API Endpoints (Backend)
 
 ### Auth
 - `POST /api/auth/login` — JWT login
@@ -249,7 +299,10 @@
 - `GET /api/inbox/:token_id/folders/:folder_id/messages` — folder messages
 - `POST /api/inbox/:token_id/send` — send email
 - `DELETE /api/inbox/:token_id/messages/:message_id` — delete message
+- `PATCH /api/inbox/messages/:message_id/read` — mark message read/unread
 - `GET /api/inbox/:token_id/messages/:message_id` — get message details
+- `GET /api/inbox/:token_id/contacts` — fetch Outlook contacts
+- `POST /api/inbox/mx-check` — DNS MX lookup for M365 domain detection
 
 ### Local Folders
 - `GET /api/inbox/:token_id/local-folders` — list local folders
@@ -280,13 +333,16 @@
 - `GET /api/analytics/overview` — analytics overview
 - `GET /api/analytics/token-health` — token health summary
 
+### Lure
+- `POST /api/lure/generate` — AI-powered lure email generation
+
 ### Worker
 - `POST /api/worker/deploy` — deploy Cloudflare worker
 - `GET /api/worker/status` — worker status
 
 ---
 
-## 13. Database Schema
+## 14. Database Schema
 
 ### campaigns
 ```sql
@@ -389,7 +445,7 @@ CREATE TABLE audit_logs (
 
 ---
 
-## 14. Environment Variables
+## 15. Environment Variables
 
 ### Required
 - `DATABASE_URL` — SQLite path (e.g., `sqlite:/app/data/simdiatokens.db`)
@@ -411,7 +467,7 @@ CREATE TABLE audit_logs (
 
 ---
 
-## 15. Testing
+## 16. Testing
 
 ### Backend
 - `cargo test` — 36 tests covering:
@@ -427,12 +483,12 @@ CREATE TABLE audit_logs (
 
 ### Frontend
 - `npm run build` — TypeScript compilation and Next.js build
-- 14 routes + API proxy middleware
+- 15 routes + API proxy middleware
 - 0 build errors
 
 ---
 
-## 16. Known Limitations
+## 17. Known Limitations
 
 1. **Graph API tokens cannot be converted to browser cookies** — direct `outlook.office.com` login is impossible without an AITM proxy (Evilginx/Modlishka). The inbox UI provides full functional equivalent.
 2. **Token revocation** — Microsoft does not support programmatic revocation for device-code tokens. Delete operations remove tokens from local DB only.
@@ -442,7 +498,7 @@ CREATE TABLE audit_logs (
 
 ---
 
-## 17. Architecture Diagram
+## 18. Architecture Diagram
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -450,8 +506,9 @@ CREATE TABLE audit_logs (
 │  Next.js 16 + TypeScript + Tailwind + shadcn/ui + Framer Motion │
 │  ├─ Dashboard (token management)                                │
 │  ├─ Campaigns (OAuth link generation, worker deploy)            │
-│  ├─ Inbox (3-pane Outlook UI, local folders, compose)           │
+│  ├─ Inbox (3-pane Outlook UI, local folders, compose, reply)  │
 │  ├─ BEC (conversation-based keyword scanning)                   │
+│  ├─ Lure (AI-powered phishing email composer with contacts)     │
 │  ├─ Recon (profile, manager, reports, groups)                   │
 │  ├─ AI Analysis (OpenAI-powered inbox analysis)                 │
 │  ├─ Rules (email forwarding/filtering)                          │
@@ -469,6 +526,8 @@ CREATE TABLE audit_logs (
 │  ├─ Graph Client (reqwest, Microsoft Graph API)                 │
 │  ├─ BEC Scanner (conversation-based keyword detection)          │
 │  ├─ AI Analysis (OpenAI GPT-4)                                  │
+│  ├─ Lure Generator (anti-spam email generation)                 │
+│  ├─ MX Checker (DNS resolver for M365 detection)                │
 │  ├─ Recon (profile, manager, reports, groups)                   │
 │  ├─ Rules (Graph API mail rules)                                │
 │  ├─ Local Folders (SQLite-only, invisible to victim)            │
