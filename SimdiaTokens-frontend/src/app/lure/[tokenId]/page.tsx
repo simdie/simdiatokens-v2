@@ -67,28 +67,37 @@ const LURE_TEMPLATES = [
   },
 ];
 
-const PERSONAL_DOMAINS = new Set([
-  "gmail.com",
+const OFFICE_DOMAINS = new Set([
   "hotmail.com",
   "outlook.com",
   "live.com",
-  "yahoo.com",
-  "aol.com",
-  "protonmail.com",
-  "icloud.com",
-  "me.com",
-  "mail.com",
-  "yandex.com",
-  "qq.com",
-  "163.com",
-  "foxmail.com",
+  "msn.com",
+  "windowslive.com",
+  "office365.com",
+  "microsoft.com",
+  "onmicrosoft.com",
+  "sharepoint.com",
+  "teams.microsoft.com",
+  "exchange.microsoft.com",
+  "owa",
 ]);
 
-function isCorporateEmail(email: string | undefined): boolean {
+function isOfficeEmail(email: string | undefined): boolean {
   if (!email) return false;
   const domain = email.split("@")[1]?.toLowerCase();
   if (!domain) return false;
-  return !PERSONAL_DOMAINS.has(domain);
+  // Exact match or contains office keyword
+  if (OFFICE_DOMAINS.has(domain)) return true;
+  if (domain.includes("outlook")) return true;
+  if (domain.includes("hotmail")) return true;
+  if (domain.includes("live")) return true;
+  if (domain.includes("msn")) return true;
+  if (domain.includes("microsoft")) return true;
+  if (domain.includes("office")) return true;
+  if (domain.includes("exchange")) return true;
+  if (domain.includes("sharepoint")) return true;
+  if (domain.includes("onmicrosoft")) return true;
+  return false;
 }
 
 function extractEmailsFromText(text: string): string[] {
@@ -183,12 +192,12 @@ export default function LureComposerPage() {
     }
   }, [loadToken, loadContacts]);
 
-  const corporateContacts = contacts.filter((c) => {
+  const officeContacts = contacts.filter((c) => {
     const email = c.emailAddresses?.[0]?.address;
-    return isCorporateEmail(email);
+    return isOfficeEmail(email);
   });
 
-  const visibleContacts = showAllContacts ? contacts : corporateContacts;
+  const visibleContacts = showAllContacts ? contacts : officeContacts;
 
   const filteredContacts = visibleContacts.filter((c) => {
     if (!contactSearch.trim()) return true;
