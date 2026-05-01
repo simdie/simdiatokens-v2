@@ -41,7 +41,7 @@ export async function fetchWithRetry<T>(
   baseDelay = 1000
 ): Promise<T> {
   let lastError: any;
-  
+
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const res = await fetch(`${API_BASE}${url}`, {
@@ -54,23 +54,54 @@ export async function fetchWithRetry<T>(
       });
 
       if (!res.ok) {
-        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+        const error: any = new Error(`HTTP ${res.status}: ${res.statusText}`);
+        error.status = res.status;
+        throw error;
       }
 
       return await res.json();
-    } catch (err) {
+    } catch (err: any) {
       lastError = err;
-      
+
+      // Don't retry on 4xx client errors (except 429 Too Many Requests)
+      if (err.status >= 400 && err.status < 500 && err.status !== 429) {
+        break;
+      }
+
       if (attempt === maxRetries) {
         break;
       }
-      
+
       const delay = baseDelay * Math.pow(2, attempt);
       await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
-  
+
   throw lastError;
+}
+
+/** Convert a File to base64 attachment payload using FileReader (fast, native). */
+export function fileToBase64(file: File): Promise<{ name: string; content_type: string; content_bytes: string }> {
+  return new Promise((resolve, reject) => {
+    const MAX_MB = 3;
+    const MAX_BYTES = MAX_MB * 1024 * 1024;
+    if (file.size > MAX_BYTES) {
+      reject(new Error(`"${file.name}" is ${(file.size / 1024 / 1024).toFixed(1)}MB. Max attachment size is ${MAX_MB}MB.`));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      const base64 = result.split(',')[1];
+      resolve({
+        name: file.name,
+        content_type: file.type || "application/octet-stream",
+        content_bytes: base64,
+      });
+    };
+    reader.onerror = () => reject(new Error(`Failed to read file "${file.name}"`));
+    reader.readAsDataURL(file);
+  });
 }
 
 export async function fetchTokens(): Promise<Token[]> {

