@@ -57,7 +57,7 @@ use lure::generate_lure_handler;
 mod inbox_folders;
 use inbox_folders::{
     list_folders_handler, folder_messages_handler, create_folder_handler,
-    send_mail_handler, delete_message_handler, fetch_contacts_handler,
+    send_mail_handler, upload_attachment_handler, delete_message_handler, fetch_contacts_handler,
     mark_read_handler, mx_check_handler,
     list_local_folders_handler, create_local_folder_handler,
     delete_local_folder_handler, list_local_folder_messages_handler,
@@ -1150,6 +1150,7 @@ async fn main() -> std::io::Result<()> {
             .route("/api/inbox/folders", web::post().to(create_folder_handler))
             .route("/api/inbox/folders/{folder_id}", web::get().to(folder_messages_handler))
             .route("/api/inbox/send", web::post().to(send_mail_handler))
+            .route("/api/inbox/upload-attachment", web::post().to(upload_attachment_handler))
             .route("/api/inbox/messages/{message_id}", web::delete().to(delete_message_handler))
             .route("/api/inbox/messages/{message_id}/read", web::patch().to(mark_read_handler))
             .route("/api/inbox/contacts", web::get().to(fetch_contacts_handler))

