@@ -27,6 +27,7 @@ base64 = "0.22"
 argon2 = "0.5"
 jsonwebtoken = "9"
 actix-web-httpauth = "0.8"
+hickory-resolver = "0.24"
 
 [dev-dependencies]
 wiremock = "0.6"

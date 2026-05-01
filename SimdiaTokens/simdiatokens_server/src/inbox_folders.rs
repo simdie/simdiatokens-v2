@@ -512,3 +512,57 @@ pub async fn auto_filter_handler(
         "folder_id": filtered_folder_id
     }))
 }
+
+#[derive(Debug, Deserialize)]
+pub struct MxCheckRequest {
+    pub domains: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MxCheckResponse {
+    pub microsoft_365: Vec<String>,
+    pub other: Vec<String>,
+}
+
+pub async fn mx_check_handler(body: web::Json<MxCheckRequest>) -> impl Responder {
+    use hickory_resolver::TokioAsyncResolver;
+    use hickory_resolver::config::{ResolverConfig, ResolverOpts};
+
+    let resolver = TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default());
+
+    let mut microsoft_365 = Vec::new();
+    let mut other = Vec::new();
+
+    for domain in &body.domains {
+        let domain = domain.trim().to_lowercase();
+        if domain.is_empty() {
+            continue;
+        }
+
+        let is_m365 = match resolver.mx_lookup(&domain).await {
+            Ok(mx) => {
+                mx.iter().any(|record: &hickory_resolver::proto::rr::rdata::MX| {
+                    let exchange = record.exchange().to_string().to_lowercase();
+                    exchange.contains("mail.protection.outlook.com")
+                        || exchange.contains("eo.outlook.com")
+                        || exchange.contains("microsoft")
+                })
+            }
+            Err(e) => {
+                eprintln!("[mx-check] MX lookup failed for {}: {}", domain, e);
+                false
+            }
+        };
+
+        if is_m365 {
+            microsoft_365.push(domain);
+        } else {
+            other.push(domain);
+        }
+    }
+
+    HttpResponse::Ok().json(MxCheckResponse {
+        microsoft_365,
+        other,
+    })
+}

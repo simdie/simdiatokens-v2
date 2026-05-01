@@ -33,6 +33,7 @@ import {
   fetchLocalFolderMessages,
   fetchContacts,
   markMessageRead,
+  mxCheck,
   generateLureEmail,
 } from "@/lib/utils";
 
@@ -71,6 +72,7 @@ export {
   fetchContacts,
   deleteLocalFolder,
   markMessageRead,
+  mxCheck,
   generateLureEmail,
 };
 

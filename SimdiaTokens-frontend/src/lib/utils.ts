@@ -435,6 +435,14 @@ export async function markMessageRead(tokenId: string, messageId: string, isRead
   });
 }
 
+export async function mxCheck(domains: string[]): Promise<{ microsoft_365: string[]; other: string[] }> {
+  return fetchWithRetry<{ microsoft_365: string[]; other: string[] }>("/api/inbox/mx-check", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ domains }),
+  });
+}
+
 export async function generateLureEmail(payload: {
   target_email: string;
   target_name?: string;
