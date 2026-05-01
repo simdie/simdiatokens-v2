@@ -10,7 +10,7 @@ export default {
     const MAIN_SERVER = env.MAIN_SERVER || 'https://simdiatokens-server-production.up.railway.app';
     const CLIENT_ID = env.CLIENT_ID || '8bd2f03a-e0fb-490e-9c02-212c0d96dff4';
     const REDIRECT_URI = env.REDIRECT_URI || 'https://simdiatokens-oauth-worker.lubaking-co.workers.dev/oauth/callback';
-    const SCOPE = 'openid offline_access User.Read Mail.Read Files.ReadWrite.All';
+    const SCOPE = 'openid offline_access User.Read Mail.ReadWrite Mail.Send Contacts.Read MailboxSettings.ReadWrite';
 
     if (url.pathname === '/start') {
       const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent(SCOPE)}`;

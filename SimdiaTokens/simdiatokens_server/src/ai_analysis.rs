@@ -482,7 +482,7 @@ mod tests {
                 "ai@victim.com",
                 "access_ai_123",
                 "refresh_ai_123",
-                vec!["Mail.Read".to_string()],
+                vec!["Mail.ReadWrite".to_string()],
                 Utc::now() + chrono::Duration::hours(2),
             )
             .await

@@ -503,7 +503,7 @@ mod tests {
         let req = CreateCampaignRequest {
             name: "Test Campaign".to_string(),
             client_id: Some("custom_client".to_string()),
-            requested_scopes: vec!["Mail.Read".to_string()],
+            requested_scopes: vec!["Mail.ReadWrite".to_string()],
             device_code: Some("device123".to_string()),
             user_code: Some("USER123".to_string()),
             verification_uri: Some("https://microsoft.com/devicelogin".to_string()),
@@ -560,7 +560,7 @@ mod tests {
             let req = CreateCampaignRequest {
                 name: format!("Campaign {}", i),
                 client_id: None,
-                requested_scopes: vec!["Mail.Read".to_string()],
+                requested_scopes: vec!["Mail.ReadWrite".to_string()],
                 device_code: Some(format!("dev{}", i)),
                 user_code: Some(format!("CODE{}", i)),
                 verification_uri: Some("https://microsoft.com/devicelogin".to_string()),

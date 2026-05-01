@@ -549,7 +549,7 @@ mod tests {
             Some("user@test.com"),
             Some("1.2.3.4"),
             Some("Mozilla/5.0"),
-            Some(serde_json::json!({"scopes": ["Mail.Read"]})),
+            Some(serde_json::json!({"scopes": ["Mail.ReadWrite"]})),
             true,
         )
         .await

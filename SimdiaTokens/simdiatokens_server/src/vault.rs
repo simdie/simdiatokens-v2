@@ -301,7 +301,7 @@ mod tests {
                 "victim@target-org.com",
                 "access_token_abc_123",
                 "refresh_token_xyz_456",
-                vec!["Mail.Read".to_string(), "User.Read".to_string()],
+                vec!["Mail.ReadWrite".to_string(), "User.Read".to_string()],
                 Utc::now() + chrono::Duration::hours(1),
             )
             .await
@@ -318,7 +318,7 @@ mod tests {
         assert_eq!(token.user_email, "victim@target-org.com");
         assert_eq!(token.access_token, "access_token_abc_123");
         assert_eq!(token.refresh_token, "refresh_token_xyz_456");
-        assert_eq!(token.scopes, vec!["Mail.Read", "User.Read"]);
+        assert_eq!(token.scopes, vec!["Mail.ReadWrite", "User.Read"]);
         assert!(token.last_refreshed_at.is_none());
     }
 
@@ -334,7 +334,7 @@ mod tests {
                 "user@test.com",
                 "old_access",
                 "old_refresh",
-                vec!["Mail.Read".to_string()],
+                vec!["Mail.ReadWrite".to_string()],
                 Utc::now() + chrono::Duration::hours(1),
             )
             .await

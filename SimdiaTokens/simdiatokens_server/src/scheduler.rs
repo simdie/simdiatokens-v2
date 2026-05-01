@@ -403,7 +403,7 @@ mod tests {
                 "user2@test.com",
                 "old_access",
                 "old_refresh",
-                vec!["Mail.Read".to_string()],
+                vec!["Mail.ReadWrite".to_string()],
                 Utc::now() + Duration::minutes(5),
             )
             .await
