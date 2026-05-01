@@ -150,6 +150,7 @@ export default function LureComposerPage() {
   } | null>(null);
 
   const [scheduleTime, setScheduleTime] = useState("");
+  const [attachments, setAttachments] = useState<File[]>([]);
 
   // Enterprise domain whitelist (manual + MX-verified)
   const [manualWhitelist, setManualWhitelist] = useState<string>("");
@@ -424,6 +425,22 @@ export default function LureComposerPage() {
     if (!tokenId) return;
     setSending(true);
     try {
+      const attachmentPayload = await Promise.all(
+        attachments.map(async (file) => {
+          const buffer = await file.arrayBuffer();
+          const bytes = new Uint8Array(buffer);
+          let binary = "";
+          for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+          }
+          return {
+            name: file.name,
+            content_type: file.type || "application/octet-stream",
+            content_bytes: btoa(binary),
+          };
+        })
+      );
+
       const max = Math.max(1, maxRecipientsPerSend);
       for (let i = 0; i < toRecipients.length; i += max) {
         const chunk = toRecipients.slice(i, i + max);
@@ -432,6 +449,7 @@ export default function LureComposerPage() {
           subject,
           body,
           content_type: contentType,
+          attachments: attachmentPayload.length > 0 ? attachmentPayload : undefined,
         });
       }
       toast.success(`Lure email sent to ${toRecipients.join(", ")}`);
@@ -443,6 +461,7 @@ export default function LureComposerPage() {
       setSelectedContactEmails(new Set());
       setRecipientInput("");
       setScheduleTime("");
+      setAttachments([]);
     } catch (err: any) {
       toast.error(err.message || "Failed to send lure email");
     } finally {
@@ -725,6 +744,34 @@ export default function LureComposerPage() {
                   placeholder={contentType === "HTML" ? "Type your HTML message..." : "Type your message..."}
                   className="w-full h-64 rounded-lg border border-white/5 bg-secondary/30 px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none focus-visible:ring-1 focus-visible:ring-primary/30 resize-none font-mono"
                 />
+                {/* Attachments */}
+                <div className="mt-3 space-y-2">
+                  <input
+                    type="file"
+                    multiple
+                    id="lure-attachments"
+                    className="hidden"
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files || []);
+                      setAttachments((prev) => [...prev, ...files]);
+                    }}
+                  />
+                  <label htmlFor="lure-attachments" className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground cursor-pointer">
+                    <Plus className="h-3.5 w-3.5" /> Attach files
+                  </label>
+                  {attachments.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {attachments.map((file, idx) => (
+                        <Badge key={idx} variant="secondary" className="text-[10px] gap-1">
+                          {file.name}
+                          <button onClick={() => setAttachments((prev) => prev.filter((_, i) => i !== idx))} className="hover:text-destructive">
+                            <X className="h-3 w-3" />
+                          </button>
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Schedule send + Max recipients */}

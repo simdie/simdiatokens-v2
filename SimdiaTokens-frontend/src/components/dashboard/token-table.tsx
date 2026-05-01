@@ -430,16 +430,29 @@ export function TokenTable({ tokens, loading, onRefresh, lastUpdated }: TokenTab
              </Button>
            </div>
 
-           <Button
-             variant="outline"
-             size="sm"
-             onClick={onRefresh}
-             disabled={loading}
-             className="gap-1.5 border-white/10 bg-secondary/50 hover:bg-secondary"
-           >
-             <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-             Refresh
-           </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                onRefresh();
+                // Also refresh all non-expired tokens
+                const now = new Date();
+                const activeTokens = tokens.filter((t) => new Date(t.expires_at) > now);
+                if (activeTokens.length > 0) {
+                  await Promise.allSettled(
+                    activeTokens.map((t) =>
+                      refreshToken(t.id).catch(() => null)
+                    )
+                  );
+                  onRefresh();
+                }
+              }}
+              disabled={loading}
+              className="gap-1.5 border-white/10 bg-secondary/50 hover:bg-secondary"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
         </div>
       </motion.div>
 

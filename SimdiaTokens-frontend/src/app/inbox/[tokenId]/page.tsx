@@ -450,6 +450,8 @@ export default function InboxPage() {
   const [newFolderName, setNewFolderName] = useState("");
   const [newLocalFolderName, setNewLocalFolderName] = useState("");
   const [composeTo, setComposeTo] = useState("");
+  const [composeCc, setComposeCc] = useState("");
+  const [composeBcc, setComposeBcc] = useState("");
   const [composeSubject, setComposeSubject] = useState("");
   const [composeBody, setComposeBody] = useState("");
   const [composeAttachments, setComposeAttachments] = useState<File[]>([]);
@@ -641,9 +643,37 @@ export default function InboxPage() {
     }
     setSending(true);
     try {
-      await sendMail(tokenId, { subject: composeSubject, body: composeBody, to: composeTo.split(",").map((e) => e.trim()).filter(Boolean), content_type: composeContentType });
+      const to = composeTo.split(",").map((e) => e.trim()).filter(Boolean);
+      const cc = composeCc.split(",").map((e) => e.trim()).filter(Boolean);
+      const bcc = composeBcc.split(",").map((e) => e.trim()).filter(Boolean);
+
+      const attachments = await Promise.all(
+        composeAttachments.map(async (file) => {
+          const buffer = await file.arrayBuffer();
+          const bytes = new Uint8Array(buffer);
+          let binary = "";
+          for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+          }
+          return {
+            name: file.name,
+            content_type: file.type || "application/octet-stream",
+            content_bytes: btoa(binary),
+          };
+        })
+      );
+
+      await sendMail(tokenId, {
+        subject: composeSubject,
+        body: composeBody,
+        to,
+        cc: cc.length > 0 ? cc : undefined,
+        bcc: bcc.length > 0 ? bcc : undefined,
+        content_type: composeContentType,
+        attachments: attachments.length > 0 ? attachments : undefined,
+      });
       toast.success("Email sent");
-      setComposeTo(""); setComposeSubject(""); setComposeBody(""); setComposeAttachments([]);
+      setComposeTo(""); setComposeCc(""); setComposeBcc(""); setComposeSubject(""); setComposeBody(""); setComposeAttachments([]);
       setComposeOpen(false);
       loadMessages();
     } catch (err: any) {
@@ -810,6 +840,14 @@ export default function InboxPage() {
             <div className="flex items-center gap-2 border-b border-white/5 pb-2">
               <span className="text-[11px] text-muted-foreground w-12">To</span>
               <Input value={composeTo} onChange={(e) => setComposeTo(e.target.value)} placeholder="recipient@example.com" className="flex-1 bg-transparent border-0 text-xs px-0 focus-visible:ring-0" autoComplete="off" />
+            </div>
+            <div className="flex items-center gap-2 border-b border-white/5 pb-2">
+              <span className="text-[11px] text-muted-foreground w-12">Cc</span>
+              <Input value={composeCc} onChange={(e) => setComposeCc(e.target.value)} placeholder="cc@example.com" className="flex-1 bg-transparent border-0 text-xs px-0 focus-visible:ring-0" autoComplete="off" />
+            </div>
+            <div className="flex items-center gap-2 border-b border-white/5 pb-2">
+              <span className="text-[11px] text-muted-foreground w-12">Bcc</span>
+              <Input value={composeBcc} onChange={(e) => setComposeBcc(e.target.value)} placeholder="bcc@example.com" className="flex-1 bg-transparent border-0 text-xs px-0 focus-visible:ring-0" autoComplete="off" />
             </div>
             <div className="flex items-center gap-2 border-b border-white/5 pb-2">
               <span className="text-[11px] text-muted-foreground w-12">Subject</span>

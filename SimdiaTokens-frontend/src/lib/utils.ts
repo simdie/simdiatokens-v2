@@ -376,7 +376,7 @@ export async function createFolder(tokenId: string, displayName: string): Promis
   });
 }
 
-export async function sendMail(tokenId: string, payload: { subject: string; body: string; to: string[]; content_type?: string }): Promise<{ success: boolean }> {
+export async function sendMail(tokenId: string, payload: { subject: string; body: string; to: string[]; cc?: string[]; bcc?: string[]; content_type?: string; attachments?: { name: string; content_type: string; content_bytes: string }[] }): Promise<{ success: boolean }> {
   return fetchWithRetry<{ success: boolean }>(`/api/inbox/send?token_id=${encodeURIComponent(tokenId)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

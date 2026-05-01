@@ -38,9 +38,9 @@ Return ONLY a JSON object with keys: subject, body (plain text), html_body (full
 pub async fn generate_lure_handler(
     body: web::Json<GenerateLureRequest>,
 ) -> impl Responder {
-    let api_key = match std::env::var("OPENAI_API_KEY") {
+    let api_key = match std::env::var("AI_API_KEY") {
         Ok(k) => k,
-        Err(_) => return HttpResponse::InternalServerError().json(serde_json::json!({"error": "OPENAI_API_KEY not configured"})),
+        Err(_) => return HttpResponse::InternalServerError().json(serde_json::json!({"error": "AI_API_KEY not configured"})),
     };
 
     let template_hint = match body.template_type.as_deref() {
