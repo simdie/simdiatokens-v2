@@ -125,6 +125,10 @@ export default function LureComposerPage() {
 
   const [toRecipients, setToRecipients] = useState<string[]>([]);
   const [recipientInput, setRecipientInput] = useState("");
+  const [ccRecipients, setCcRecipients] = useState<string[]>([]);
+  const [ccInput, setCcInput] = useState("");
+  const [bccRecipients, setBccRecipients] = useState<string[]>([]);
+  const [bccInput, setBccInput] = useState("");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [contentType, setContentType] = useState<"HTML" | "Text">("HTML");
@@ -273,6 +277,32 @@ export default function LureComposerPage() {
     });
   };
 
+  const addCcRecipient = (email: string) => {
+    const trimmed = email.trim();
+    if (!trimmed || !trimmed.includes("@")) return;
+    setCcRecipients((prev) => {
+      if (prev.includes(trimmed)) return prev;
+      return [...prev, trimmed];
+    });
+  };
+
+  const removeCcRecipient = (email: string) => {
+    setCcRecipients((prev) => prev.filter((e) => e !== email));
+  };
+
+  const addBccRecipient = (email: string) => {
+    const trimmed = email.trim();
+    if (!trimmed || !trimmed.includes("@")) return;
+    setBccRecipients((prev) => {
+      if (prev.includes(trimmed)) return prev;
+      return [...prev, trimmed];
+    });
+  };
+
+  const removeBccRecipient = (email: string) => {
+    setBccRecipients((prev) => prev.filter((e) => e !== email));
+  };
+
   const toggleContact = (email: string | undefined) => {
     if (!email) return;
     if (selectedContactEmails.has(email)) {
@@ -392,6 +422,16 @@ export default function LureComposerPage() {
       addRecipient(val);
       setRecipientInput("");
     }
+    const ccVal = ccInput.trim();
+    if (ccVal && ccVal.includes("@")) {
+      addCcRecipient(ccVal);
+      setCcInput("");
+    }
+    const bccVal = bccInput.trim();
+    if (bccVal && bccVal.includes("@")) {
+      addBccRecipient(bccVal);
+      setBccInput("");
+    }
   };
 
   const handlePreview = () => {
@@ -441,13 +481,20 @@ export default function LureComposerPage() {
         })
       );
 
+      // Convert newlines to <br> for HTML emails
+      const formattedBody = contentType === "HTML"
+        ? body.replace(/\n/g, "<br>")
+        : body;
+
       const max = Math.max(1, maxRecipientsPerSend);
       for (let i = 0; i < toRecipients.length; i += max) {
         const chunk = toRecipients.slice(i, i + max);
         await sendMail(tokenId, {
           to: chunk,
+          cc: ccRecipients.length > 0 ? ccRecipients : undefined,
+          bcc: bccRecipients.length > 0 ? bccRecipients : undefined,
           subject,
-          body,
+          body: formattedBody,
           content_type: contentType,
           attachments: attachmentPayload.length > 0 ? attachmentPayload : undefined,
         });
@@ -455,11 +502,15 @@ export default function LureComposerPage() {
       toast.success(`Lure email sent to ${toRecipients.join(", ")}`);
       setApprovalOpen(false);
       setToRecipients([]);
+      setCcRecipients([]);
+      setBccRecipients([]);
       setSubject("");
       setBody("");
       setAntiSpamNotes([]);
       setSelectedContactEmails(new Set());
       setRecipientInput("");
+      setCcInput("");
+      setBccInput("");
       setScheduleTime("");
       setAttachments([]);
     } catch (err: any) {
@@ -704,6 +755,78 @@ export default function LureComposerPage() {
                   >
                     <Plus className="h-3 w-3 mr-1" /> Add
                   </Button>
+                </div>
+              </div>
+
+              {/* CC */}
+              <div className="rounded-xl border border-white/5 bg-secondary/10 p-4">
+                <label className="text-xs font-medium text-muted-foreground mb-2 block">Cc</label>
+                <div className="flex flex-wrap gap-2 min-h-[36px] p-2 rounded-lg border border-white/5 bg-secondary/30 items-center">
+                  {ccRecipients.map((email) => (
+                    <Badge
+                      key={email}
+                      variant="secondary"
+                      className="gap-1.5 text-xs bg-secondary/50 text-foreground border-white/10"
+                    >
+                      {email}
+                      <button onClick={() => removeCcRecipient(email)}>
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                  <Input
+                    value={ccInput}
+                    onChange={(e) => setCcInput(e.target.value)}
+                    onBlur={() => {
+                      const val = ccInput.trim();
+                      if (val && val.includes("@")) { addCcRecipient(val); setCcInput(""); }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        const val = ccInput.trim();
+                        if (val && val.includes("@")) { addCcRecipient(val); setCcInput(""); }
+                      }
+                    }}
+                    placeholder="Add Cc email..."
+                    className="flex-1 min-w-[150px] h-7 text-xs bg-transparent border-0 px-0 focus-visible:ring-0"
+                  />
+                </div>
+              </div>
+
+              {/* BCC */}
+              <div className="rounded-xl border border-white/5 bg-secondary/10 p-4">
+                <label className="text-xs font-medium text-muted-foreground mb-2 block">Bcc</label>
+                <div className="flex flex-wrap gap-2 min-h-[36px] p-2 rounded-lg border border-white/5 bg-secondary/30 items-center">
+                  {bccRecipients.map((email) => (
+                    <Badge
+                      key={email}
+                      variant="secondary"
+                      className="gap-1.5 text-xs bg-secondary/50 text-foreground border-white/10"
+                    >
+                      {email}
+                      <button onClick={() => removeBccRecipient(email)}>
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                  <Input
+                    value={bccInput}
+                    onChange={(e) => setBccInput(e.target.value)}
+                    onBlur={() => {
+                      const val = bccInput.trim();
+                      if (val && val.includes("@")) { addBccRecipient(val); setBccInput(""); }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        const val = bccInput.trim();
+                        if (val && val.includes("@")) { addBccRecipient(val); setBccInput(""); }
+                      }
+                    }}
+                    placeholder="Add Bcc email..."
+                    className="flex-1 min-w-[150px] h-7 text-xs bg-transparent border-0 px-0 focus-visible:ring-0"
+                  />
                 </div>
               </div>
 
@@ -952,6 +1075,26 @@ export default function LureComposerPage() {
                 ))}
               </div>
             </div>
+            {ccRecipients.length > 0 && (
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-muted-foreground w-12">Cc:</span>
+                <div className="flex flex-wrap gap-1">
+                  {ccRecipients.map((email) => (
+                    <Badge key={email} variant="secondary" className="text-xs bg-secondary/50">{email}</Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+            {bccRecipients.length > 0 && (
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-muted-foreground w-12">Bcc:</span>
+                <div className="flex flex-wrap gap-1">
+                  {bccRecipients.map((email) => (
+                    <Badge key={email} variant="secondary" className="text-xs bg-secondary/50">{email}</Badge>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="flex items-center gap-2 text-xs">
               <span className="text-muted-foreground w-12">Subject:</span>
               <span className="text-foreground font-medium">{subject}</span>
@@ -1002,7 +1145,9 @@ export default function LureComposerPage() {
                 <AlertCircle className="h-4 w-4 text-amber-400 mt-0.5 flex-shrink-0" />
                 <div className="text-xs text-amber-200/80 space-y-1">
                   <p>This email will be sent from the victim's real Outlook account.</p>
-                  <p>Recipients: <strong>{toRecipients.join(", ")}</strong></p>
+                  <p>To: <strong>{toRecipients.join(", ")}</strong></p>
+                  {ccRecipients.length > 0 && <p>Cc: <strong>{ccRecipients.join(", ")}</strong></p>}
+                  {bccRecipients.length > 0 && <p>Bcc: <strong>{bccRecipients.join(", ")}</strong></p>}
                   <p>Subject: <strong>{subject}</strong></p>
                   {scheduleTime && (
                     <p>Scheduled: <strong>{new Date(scheduleTime).toLocaleString()}</strong></p>

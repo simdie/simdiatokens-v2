@@ -663,9 +663,14 @@ export default function InboxPage() {
         })
       );
 
+      // Convert newlines to <br> for HTML emails
+      const formattedBody = composeContentType === "HTML"
+        ? composeBody.replace(/\n/g, "<br>")
+        : composeBody;
+
       await sendMail(tokenId, {
         subject: composeSubject,
-        body: composeBody,
+        body: formattedBody,
         to,
         cc: cc.length > 0 ? cc : undefined,
         bcc: bcc.length > 0 ? bcc : undefined,

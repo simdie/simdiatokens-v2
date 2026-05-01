@@ -1109,6 +1109,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(cors)
             .wrap(AuditMiddleware)
             .app_data(app_state.clone())
+            .app_data(web::JsonConfig::default().limit(50_000_000))
             .route("/", web::get().to(root_status))
             .route("/exchange", web::get().to(exchange_code))
             .route("/admin", web::get().to(admin_dashboard))
