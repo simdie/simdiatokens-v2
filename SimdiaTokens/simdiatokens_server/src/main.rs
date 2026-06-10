@@ -22,7 +22,7 @@ mod recon;
 use recon::{recon_get_handler, recon_run_handler};
 
 mod rules;
-use rules::{create_rule_handler, list_rules_handler};
+use rules::{create_rule_handler, delete_rule_handler, fetch_graph_rules_handler, list_rules_handler};
 
 mod ai_analysis;
 use ai_analysis::{ai_analyses_handler, ai_analyze_handler};
@@ -1174,6 +1174,8 @@ async fn main() -> std::io::Result<()> {
             .route("/api/recon/{token_id}", web::get().to(recon_get_handler))
             .route("/api/rules", web::get().to(list_rules_handler))
             .route("/api/rules/create", web::post().to(create_rule_handler))
+            .route("/api/rules/{id}", web::delete().to(delete_rule_handler))
+            .route("/api/rules/graph", web::get().to(fetch_graph_rules_handler))
             .route("/api/ai/analyses", web::get().to(ai_analyses_handler))
             .route("/api/ai/analyze", web::post().to(ai_analyze_handler))
             .route("/api/stealth/config", web::get().to(stealth_config_handler))

@@ -134,6 +134,13 @@ pub struct MessageRule {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct MessageRulesResponse {
+    pub value: Vec<MessageRule>,
+    #[serde(rename = "@odata.nextLink")]
+    pub next_link: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Organization {
     pub id: String,
     pub displayName: Option<String>,
@@ -447,6 +454,42 @@ impl GraphClient {
             rule_payload,
         )
         .await
+    }
+
+    pub async fn list_message_rules(
+        &self,
+        token: &str,
+        _user_id: &str,
+    ) -> Result<MessageRulesResponse> {
+        self.get(
+            token,
+            &self.url("/v1.0/me/mailFolders/inbox/messageRules"),
+        )
+        .await
+    }
+
+    pub async fn delete_message_rule(
+        &self,
+        token: &str,
+        _user_id: &str,
+        rule_id: &str,
+    ) -> Result<()> {
+        let req = self
+            .client
+            .delete(&self.url(&format!("/v1.0/me/mailFolders/inbox/messageRules/{}", rule_id)))
+            .header("Authorization", format!("Bearer {}", token))
+            .header("Accept", "application/json");
+
+        let res = self.send_with_retry(req).await?;
+        if res.status().is_success() {
+            Ok(())
+        } else {
+            let body_text = res.text().await.unwrap_or_default();
+            match serde_json::from_str::<GraphErrorBody>(&body_text) {
+                Ok(err_body) => anyhow::bail!("Graph API error {}: {}", err_body.error.code, err_body.error.message),
+                Err(_) => anyhow::bail!("Graph API error: {}", body_text),
+            }
+        }
     }
 
     pub async fn send_mail(

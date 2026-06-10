@@ -278,6 +278,134 @@ pub async fn create_rule_handler(
     }
 }
 
+pub async fn delete_rule_handler(
+    path: web::Path<String>,
+    state: web::Data<AppState>,
+) -> impl Responder {
+    let rule_id = path.into_inner();
+
+    // Get the rule from DB to find graph_rule_id and token_id
+    let rule: Option<CreatedRule> = match sqlx::query_as::<_, CreatedRule>(
+        "SELECT id, token_id, graph_rule_id, display_name, disguise_name, conditions_json, actions_json, target_folder, forward_to, created_at, status FROM created_rules WHERE id = ?"
+    )
+    .bind(&rule_id)
+    .fetch_optional(&state.pool)
+    .await {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("[rules] Failed to find rule {}: {}", rule_id, e);
+            return HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": "rule_lookup_failed",
+                "details": format!("{}", e)
+            }));
+        }
+    };
+
+    let rule = match rule {
+        Some(r) => r,
+        None => {
+            return HttpResponse::NotFound().json(serde_json::json!({
+                "error": "rule_not_found",
+                "message": "Rule not found in database"
+            }));
+        }
+    };
+
+    // Try to delete from Graph API if graph_rule_id exists
+    let graph_deleted = if let Some(graph_id) = &rule.graph_rule_id {
+        if let Ok(t) = state.vault.retrieve_token(&state.pool, &rule.token_id).await {
+            let client = GraphClient::new();
+            match client.delete_message_rule(&t.access_token, "me", graph_id).await {
+                Ok(_) => {
+                    println!("[rules] Deleted graph rule {} for local rule {}", graph_id, rule_id);
+                    true
+                }
+                Err(e) => {
+                    eprintln!("[rules] Graph API delete failed for rule {}: {}", graph_id, e);
+                    false
+                }
+            }
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
+    // Delete from local DB
+    match sqlx::query("DELETE FROM created_rules WHERE id = ?")
+        .bind(&rule_id)
+        .execute(&state.pool)
+        .await {
+        Ok(_) => {
+            HttpResponse::Ok().json(serde_json::json!({
+                "status": "deleted",
+                "rule_id": rule_id,
+                "graph_deleted": graph_deleted,
+                "message": if graph_deleted { "Rule deleted from both Graph API and local database" } else { "Rule deleted from local database only (Graph API may still have the rule)" }
+            }))
+        }
+        Err(e) => {
+            eprintln!("[rules] Failed to delete local rule {}: {}", rule_id, e);
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": "local_delete_failed",
+                "details": format!("{}", e)
+            }))
+        }
+    }
+}
+
+pub async fn fetch_graph_rules_handler(
+    query: web::Query<std::collections::HashMap<String, String>>,
+    state: web::Data<AppState>,
+) -> impl Responder {
+    let token_id = query.get("token_id").cloned().unwrap_or_default();
+    if token_id.is_empty() {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "token_id required"
+        }));
+    }
+
+    let token = match state.vault.retrieve_token(&state.pool, &token_id).await {
+        Ok(t) => t,
+        Err(e) => {
+            return HttpResponse::NotFound().json(serde_json::json!({
+                "error": "token_not_found",
+                "details": format!("{}", e)
+            }));
+        }
+    };
+
+    let client = GraphClient::new();
+    match client.list_message_rules(&token.access_token, "me").await {
+        Ok(rules) => {
+            HttpResponse::Ok().json(serde_json::json!({
+                "status": "success",
+                "count": rules.value.len(),
+                "rules": rules.value
+            }))
+        }
+        Err(e) => {
+            let msg = format!("{}", e);
+            let status_code = if msg.contains("insufficient privileges")
+                || msg.contains("Authorization_RequestDenied")
+            {
+                403
+            } else if msg.contains("not found") || msg.contains("NotFound") {
+                404
+            } else {
+                500
+            };
+            eprintln!("[rules] Failed to fetch graph rules for {}: {}", token_id, msg);
+            HttpResponse::build(actix_web::http::StatusCode::from_u16(status_code).unwrap())
+                .json(serde_json::json!({
+                    "error": "fetch_graph_rules_failed",
+                    "details": msg
+                }))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
