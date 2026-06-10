@@ -7,6 +7,11 @@ export interface Token {
   created_at?: string;
   updated_at?: string;
   last_activity?: string;
+  ip_address?: string;
+  location?: string;
+  tenant_id?: string;
+  category?: string;
+  last_refreshed_at?: string;
 }
 
 export interface GraphMessage {
