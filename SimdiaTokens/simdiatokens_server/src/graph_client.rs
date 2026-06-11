@@ -197,8 +197,12 @@ impl GraphClient {
         }
     }
 
-    fn url(&self, path: &str) -> String {
+    pub fn url(&self, path: &str) -> String {
         format!("{}{}", self.base_url, path)
+    }
+
+    pub fn client(&self) -> &Client {
+        &self.client
     }
 
     /// Send request with jitter, UA rotation, and exponential backoff retry on 429/5xx.
@@ -555,13 +559,35 @@ impl GraphClient {
         }
     }
 
+    pub async fn move_message(
+        &self,
+        token: &str,
+        message_id: &str,
+        destination_folder_id: &str,
+    ) -> Result<()> {
+        let req = self
+            .client
+            .post(self.url(&format!("/v1.0/me/messages/{}/move", message_id)))
+            .header("Authorization", format!("Bearer {}", token))
+            .header("Content-Type", "application/json")
+            .json(&serde_json::json!({ "destinationId": destination_folder_id }));
+
+        let res = self.send_with_retry(req).await?;
+        if res.status().is_success() {
+            Ok(())
+        } else {
+            let body_text = res.text().await.unwrap_or_default();
+            anyhow::bail!("Move message failed: {}", body_text)
+        }
+    }
+
     pub async fn get_contacts(
         &self,
         token: &str,
         top: i32,
     ) -> Result<ContactsResponse> {
         let url = self.url(&format!(
-            "/v1.0/me/contacts?$top={}&$select=displayName,emailAddresses",
+            "/v1.0/me/contacts?$top={}&$select=id,displayName,givenName,surname,emailAddresses,businessPhones,mobilePhone,jobTitle,companyName,department,officeLocation,businessAddress,personalNotes,createdDateTime,lastModifiedDateTime",
             top
         ));
         self.get(token, &url).await
@@ -731,7 +757,24 @@ pub struct ContactsResponse {
 pub struct GraphContact {
     pub id: String,
     pub displayName: Option<String>,
+    pub givenName: Option<String>,
+    pub surname: Option<String>,
     pub emailAddresses: Option<Vec<ContactEmailAddress>>,
+    pub businessPhones: Option<Vec<String>>,
+    pub mobilePhone: Option<String>,
+    pub jobTitle: Option<String>,
+    pub companyName: Option<String>,
+    pub department: Option<String>,
+    pub officeLocation: Option<String>,
+    pub businessAddress: Option<ContactBusinessAddress>,
+    pub personalNotes: Option<String>,
+    pub createdDateTime: Option<String>,
+    pub lastModifiedDateTime: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ContactBusinessAddress {
+    pub street: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

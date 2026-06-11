@@ -7,7 +7,6 @@ import {
   Mail,
   Search,
   Shield,
-  Brain,
   Loader2,
   AlertTriangle,
   InboxIcon,
@@ -22,7 +21,7 @@ import {
 import { format, formatDistanceToNow } from "date-fns";
 
 import { Token, GraphMessage, Rule, BECAnalysisReport } from "@/types/token";
-import { fetchTokens, fetchInbox, fetchRules, analyzeInbox } from "@/lib/utils";
+import { fetchTokens, fetchInbox, fetchRules } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { useDecryptedData } from "@/hooks/use-decrypted-data";
 import { usePollingApi } from "@/lib/polling";
@@ -102,12 +101,6 @@ export default function InboxConsolePage() {
   const [rules, setRules] = useState<Rule[]>([]);
   const [rulesLoading, setRulesLoading] = useState(false);
   const [rulesError, setRulesError] = useState<string | null>(null);
-
-  // AI Analysis
-  const [aiOpen, setAiOpen] = useState(false);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiReport, setAiReport] = useState<BECAnalysisReport | null>(null);
-  const [aiError, setAiError] = useState<string | null>(null);
 
   // Summarize
   const [summary, setSummary] = useState<string | null>(null);
@@ -308,21 +301,6 @@ export default function InboxConsolePage() {
     }
   };
 
-  const handleAnalyze = async () => {
-    if (!selectedTokenId) return;
-    setAiOpen(true);
-    setAiLoading(true);
-    setAiError(null);
-    try {
-      const report = await analyzeInbox(selectedTokenId);
-      setAiReport(report);
-    } catch (err: any) {
-      setAiError(err.message || "Failed to analyze inbox");
-    } finally {
-      setAiLoading(false);
-    }
-  };
-
   const displayTokens = decryptedTokens ?? tokens;
   const filteredTokens = displayTokens.filter((t) => {
     if (!tokenSearch.trim()) return true;
@@ -479,16 +457,6 @@ export default function InboxConsolePage() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={handleAnalyze}
-                    className="gap-1 text-[11px] h-7 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
-                  >
-                    <Brain className="h-3.5 w-3.5" />
-                    AI Analysis
-                  </Button>
-
-                  <Button
-                    variant="ghost"
-                    size="sm"
                     onClick={handleRefresh}
                     disabled={refreshing}
                     className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
@@ -541,7 +509,6 @@ export default function InboxConsolePage() {
                           onForward={() => setForwardModalOpen(true)}
                           onCreateRule={() => setRuleModalOpen(true)}
                           onMarkUnread={handleMarkUnread}
-                          onAnalyze={handleAnalyze}
                           onDelete={() => {}}
                           summarizing={summarizing}
                           summary={summary}
@@ -651,171 +618,7 @@ export default function InboxConsolePage() {
         </main>
       </div>
 
-      {/* AI Analysis Modal */}
-      <Dialog open={aiOpen} onOpenChange={setAiOpen}>
-        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto glass-strong border-white/10">
-          <DialogHeader>
-            <div className="flex items-center gap-3">
-              <div className="h-9 w-9 rounded-xl bg-rose-500/10 ring-1 ring-rose-500/20 flex items-center justify-center">
-                <Brain className="h-5 w-5 text-rose-400" />
-              </div>
-              <div>
-                <DialogTitle className="text-base font-semibold">AI Inbox Analysis</DialogTitle>
-                <DialogDescription className="text-xs text-muted-foreground mt-0.5">
-                  BEC intelligence report generated from inbox contents
-                </DialogDescription>
-              </div>
-            </div>
-          </DialogHeader>
-
-          {aiLoading ? (
-            <div className="flex flex-col items-center justify-center py-12 gap-3">
-              <Loader2 className="h-6 w-6 animate-spin text-rose-400" />
-              <p className="text-xs text-muted-foreground">Analyzing inbox with AI...</p>
-            </div>
-          ) : aiError ? (
-            <div className="flex items-center gap-2 rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-3">
-              <AlertCircle className="h-4 w-4 text-destructive flex-shrink-0" />
-              <p className="text-xs text-destructive">{aiError}</p>
-            </div>
-          ) : aiReport ? (
-            <div className="space-y-5 py-2">
-              {/* Risk Score */}
-              <div className="flex items-center gap-4">
-                <div
-                  className={cn(
-                    "h-14 w-14 rounded-xl flex items-center justify-center text-lg font-bold border",
-                    aiReport.riskScore >= 75
-                      ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
-                      : aiReport.riskScore >= 50
-                      ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
-                      : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                  )}
-                >
-                  {aiReport.riskScore}
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-foreground">Risk Score</p>
-                  <p className="text-[11px] text-muted-foreground">
-                    {aiReport.emailCount} emails analyzed • {aiReport.severity.toUpperCase()} severity
-                  </p>
-                </div>
-              </div>
-
-              {/* Summary */}
-              <div className="rounded-xl bg-secondary/30 border border-white/5 p-3">
-                <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-1.5">
-                  Summary
-                </p>
-                <p className="text-xs text-foreground/80 leading-relaxed">{aiReport.summary}</p>
-              </div>
-
-              {/* Opportunities */}
-              {aiReport.opportunities.length > 0 && (
-                <div>
-                  <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-2">
-                    Opportunities
-                  </p>
-                  <div className="space-y-2">
-                    {aiReport.opportunities.map((opp, i) => (
-                      <div key={i} className="rounded-lg bg-secondary/30 border border-white/5 p-3">
-                        <div className="flex items-center gap-2 mb-1">
-                          <Badge variant="secondary" className="text-[10px]">
-                            {opp.confidence}% confidence
-                          </Badge>
-                          <span className="text-xs font-medium text-foreground">{opp.type}</span>
-                        </div>
-                        <p className="text-xs text-foreground/70 mb-1">{opp.description}</p>
-                        <p className="text-[10px] text-muted-foreground">
-                          Parties: {opp.involvedParties.join(", ")}
-                        </p>
-                        <p className="text-[10px] text-emerald-400 mt-1">
-                          Suggested: {opp.suggestedAction}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Financial Threads */}
-              {aiReport.financialThreads.length > 0 && (
-                <div>
-                  <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-2">
-                    Financial Threads
-                  </p>
-                  <div className="space-y-2">
-                    {aiReport.financialThreads.map((ft, i) => (
-                      <div key={i} className="rounded-lg bg-secondary/30 border border-white/5 p-3">
-                        <p className="text-xs font-medium text-foreground">{ft.subject}</p>
-                        <p className="text-[11px] text-amber-400 mt-0.5">
-                          {ft.amount} {ft.currency}
-                        </p>
-                        <p className="text-[10px] text-muted-foreground mt-1">
-                          Parties: {ft.parties.join(", ")} • {format(new Date(ft.date), "MMM d, yyyy")}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Executives */}
-              {aiReport.executives.length > 0 && (
-                <div>
-                  <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-2">
-                    Identified Executives
-                  </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {aiReport.executives.map((exec, i) => (
-                      <div key={i} className="rounded-lg bg-secondary/30 border border-white/5 p-3">
-                        <div className="flex items-center gap-2">
-                          <User className="h-3.5 w-3.5 text-muted-foreground" />
-                          <span className="text-xs font-medium text-foreground">{exec.name}</span>
-                        </div>
-                        <p className="text-[11px] text-muted-foreground ml-5.5">{exec.title}</p>
-                        <p className="text-[10px] text-muted-foreground/60 ml-5.5">{exec.email}</p>
-                        <Badge variant="secondary" className="text-[10px] mt-1.5 ml-5.5">
-                          Influence: {exec.influence}
-                        </Badge>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Attack Angles */}
-              {aiReport.attackAngles.length > 0 && (
-                <div>
-                  <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-2">
-                    Attack Angles
-                  </p>
-                  <div className="space-y-2">
-                    {aiReport.attackAngles.map((angle, i) => (
-                      <div key={i} className="rounded-lg bg-secondary/30 border border-white/5 p-3">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-xs font-medium text-foreground">{angle.scenario}</span>
-                          <Badge variant="secondary" className="text-[10px]">
-                            {angle.complexity} complexity
-                          </Badge>
-                          <Badge variant="secondary" className="text-[10px]">
-                            {angle.successProbability}% success
-                          </Badge>
-                        </div>
-                        <p className="text-xs text-foreground/70">{angle.description}</p>
-                        <p className="text-[10px] text-muted-foreground mt-1">
-                          Prerequisites: {angle.prerequisites.join(", ")}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : null}
-        </DialogContent>
-      </Dialog>
-
+      
       {/* Rule Modal */}
       <InboxRuleModal
         open={ruleModalOpen}

@@ -12,12 +12,12 @@ import {
   MailMinus,
   Calendar,
   ChevronRight,
-  Brain,
   Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { SafeEmailViewer } from "@/components/safe-email";
 import { GraphMessage } from "@/types/token";
 import { format, formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -29,7 +29,7 @@ interface InboxDetailProps {
   onForward: () => void;
   onCreateRule: () => void;
   onMarkUnread: () => void;
-  onAnalyze: () => void;
+  onAnalyze?: () => void;
   onDelete: () => void;
   summarizing: boolean;
   summary: string | null;
@@ -76,15 +76,6 @@ export function InboxDetail({
     <div className="flex-1 flex flex-col min-h-0">
       {/* Action bar */}
       <div className="flex items-center gap-1 px-4 py-2 border-b border-white/5 bg-secondary/10">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onAnalyze}
-          className="gap-1 text-[11px] h-7 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
-        >
-          <Brain className="h-3.5 w-3.5" />
-          Analyze Inbox
-        </Button>
         <Button
           variant="ghost"
           size="sm"
@@ -195,40 +186,13 @@ export function InboxDetail({
       </div>
 
       {/* Email Body */}
-      <ScrollArea className="flex-1">
-        <div className="px-6 py-4">
-          <div className="max-w-3xl">
-            {contentType === "html" ? (
-              <div
-                className="prose prose-invert prose-sm max-w-none
-                  [&_a]:text-primary [&_a]:underline
-                  [&_img]:rounded-lg [&_img]:max-w-full
-                  [&_table]:w-full [&_table]:border-collapse
-                  [&_td]:border [&_td]:border-white/10 [&_td]:p-2 [&_td]:text-xs
-                  [&_th]:border [&_th]:border-white/10 [&_th]:p-2 [&_th]:text-xs
-                  [&_blockquote]:border-l-2 [&_blockquote]:border-primary/30 [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground
-                  [&_pre]:bg-secondary/30 [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:text-xs
-                  [&_code]:bg-secondary/30 [&_code]:rounded [&_code]:px-1 [&_code]:text-xs
-                  [&_ul]:list-disc [&_ul]:pl-4 [&_ol]:list-decimal [&_ol]:pl-4
-                  [&_li]:text-xs [&_li]:text-foreground/80
-                  [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm
-                  [&_p]:text-xs [&_p]:text-foreground/80 [&_p]:leading-relaxed"
-                dangerouslySetInnerHTML={{ __html: bodyContent }}
-              />
-            ) : (
-              <div
-                className="text-xs text-foreground/80 leading-relaxed whitespace-pre-wrap break-words"
-                dangerouslySetInnerHTML={{
-                  __html: bodyContent.replace(/\n/g, "<br>").replace(
-                    /(https?:\/\/[^\s<]+)/g,
-                    '<a href="$1" class="text-primary underline" target="_blank" rel="noopener noreferrer">$1</a>'
-                  ),
-                }}
-              />
-            )}
-          </div>
-        </div>
-      </ScrollArea>
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+        <SafeEmailViewer
+          htmlContent={bodyContent}
+          contentType={contentType === "html" ? "html" : "text"}
+          className="flex-1 flex flex-col"
+        />
+      </div>
     </div>
   );
 }

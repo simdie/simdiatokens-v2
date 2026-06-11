@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { GeistSans } from "geist/font/sans";
+import { GeistMono } from "geist/font/mono";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/ui/theme-provider";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
@@ -9,16 +10,6 @@ import { LiveModeProvider } from "@/lib/polling";
 import { AuthProvider } from "@/hooks/use-auth";
 import { Toaster } from "sonner";
 import "./globals.css";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "SimdiaTokens | Token Management Dashboard",
@@ -33,7 +24,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full w-full antialiased dark`}
+      className={`${GeistSans.variable} ${GeistMono.variable} h-full w-full antialiased dark`}
     >
       <body className="h-full w-full flex bg-background">
         <QueryProvider>

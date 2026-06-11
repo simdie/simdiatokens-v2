@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { SafeEmailViewer } from "@/components/safe-email";
 import {
   Mail,
   Clock,
@@ -151,27 +152,19 @@ export function InboxModal({ token, open, onOpenChange }: InboxModalProps) {
                   )}
                 </div>
               </div>
-               <ScrollArea className="flex-1 px-6 py-4">
-                 <div className="prose prose-invert max-w-none">
-                   <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                     {selectedMessage.bodyPreview || "No preview available."}
-                   </p>
-                   {/* Show full email body if available */}
-                   {selectedMessage.body && (
-                     <div className="mt-4">
-                       <p className="text-xs font-medium text-muted-foreground mb-2">Full Message:</p>
-                       <div 
-                         className="whitespace-pre-wrap break-all text-xs bg-secondary/50 rounded p-3"
-                         dangerouslySetInnerHTML={{
-                           __html: selectedMessage.body.contentType === "html" 
-                             ? selectedMessage.body.content 
-                             : selectedMessage.body.content.replace(/\n/g, "<br>")
-                         }}
-                       />
-                     </div>
-                   )}
-                 </div>
-               </ScrollArea>
+               <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                  <SafeEmailViewer
+                    htmlContent={
+                      selectedMessage.body?.content ||
+                      selectedMessage.bodyPreview ||
+                      "No content available."
+                    }
+                    contentType={
+                      selectedMessage.body?.contentType === "html" ? "html" : "text"
+                    }
+                    className="flex-1 flex flex-col"
+                  />
+                </div>
             </motion.div>
           ) : messages.length === 0 ? (
             <div className="flex h-full items-center justify-center">

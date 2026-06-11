@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Token, BECScanReport } from "@/types/token";
 import { fetchTokens, fetchBECScan } from "@/lib/api";
-import { ArrowLeft, ShieldAlert, Search, Loader2, MessageSquare, Users, Clock, ChevronDown, ChevronUp } from "lucide-react";
+import { ArrowLeft, ShieldAlert, Search, Loader2, MessageSquare, Users, Clock, ChevronDown, ChevronUp, Zap, AlertCircle, CheckCircle2, AlertTriangle, Info, FileText } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { motion, AnimatePresence } from "framer-motion";
@@ -132,7 +132,43 @@ export default function BECScanPage() {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-[1200px] px-4 sm:px-6 lg:px-8 py-6">
+        <div className="mx-auto w-full max-w-[1200px] px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+          {/* How It Works */}
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-xl border border-white/5 bg-gradient-to-br from-amber-500/5 to-transparent p-5"
+          >
+            <div className="flex items-start gap-4">
+              <div className="h-10 w-10 rounded-xl bg-amber-500/10 ring-1 ring-amber-500/20 flex items-center justify-center flex-shrink-0">
+                <ShieldAlert className="h-5 w-5 text-amber-400" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-sm font-semibold text-foreground">What is BEC Scanning?</h3>
+                <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                  BEC (Business Email Compromise) Scanning analyzes conversations in the target mailbox to detect back-and-forth threads 
+                  containing financial keywords. It looks for: <strong>invoice</strong>, <strong>wire transfer</strong>, <strong>payment</strong>, 
+                  <strong>urgent</strong>, <strong>confidential</strong>, and 30+ other fraud indicators. Each conversation is scored by the number 
+                  of matched keywords and the number of messages exchanged.
+                </p>
+                <div className="flex items-center gap-4 mt-3">
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-2 w-2 rounded-full bg-emerald-400" />
+                    <span className="text-[10px] text-muted-foreground">Safe (&lt;2 keywords)</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-2 w-2 rounded-full bg-amber-400" />
+                    <span className="text-[10px] text-muted-foreground">Suspicious (2–4 keywords)</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-2 w-2 rounded-full bg-rose-400" />
+                    <span className="text-[10px] text-muted-foreground">Critical (&gt;4 keywords)</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+
           {reportLoading && !report && (
             <div className="flex flex-col items-center justify-center py-20 gap-3">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -144,7 +180,7 @@ export default function BECScanPage() {
             <AnimatePresence>
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
                 {/* Summary */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                   <div className="rounded-xl border border-white/5 bg-secondary/10 p-4">
                     <p className="text-[11px] text-muted-foreground uppercase tracking-wider">Total Conversations</p>
                     <p className="text-2xl font-bold text-foreground mt-1">{report.total_conversations}</p>
@@ -156,6 +192,27 @@ export default function BECScanPage() {
                   <div className="rounded-xl border border-white/5 bg-secondary/10 p-4">
                     <p className="text-[11px] text-muted-foreground uppercase tracking-wider">Keywords</p>
                     <p className="text-2xl font-bold text-foreground mt-1">30+</p>
+                  </div>
+                  <div className="rounded-xl border border-white/5 bg-secondary/10 p-4">
+                    <p className="text-[11px] text-muted-foreground uppercase tracking-wider">Threat Level</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      {report.flagged_conversations === 0 ? (
+                        <>
+                          <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+                          <span className="text-lg font-bold text-emerald-400">Safe</span>
+                        </>
+                      ) : report.flagged_conversations <= 2 ? (
+                        <>
+                          <AlertTriangle className="h-5 w-5 text-amber-400" />
+                          <span className="text-lg font-bold text-amber-400">Medium</span>
+                        </>
+                      ) : (
+                        <>
+                          <AlertCircle className="h-5 w-5 text-rose-400" />
+                          <span className="text-lg font-bold text-rose-400">High</span>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -181,7 +238,14 @@ export default function BECScanPage() {
                           initial={{ opacity: 0, y: 10 }}
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ delay: i * 0.05 }}
-                          className="rounded-xl border border-white/5 bg-secondary/5 overflow-hidden"
+                          className={cn(
+                            "rounded-xl border overflow-hidden",
+                            conv.keywords_matched.length > 4
+                              ? "border-rose-500/20 bg-rose-500/5"
+                              : conv.keywords_matched.length > 2
+                              ? "border-amber-500/20 bg-amber-500/5"
+                              : "border-white/5 bg-secondary/5"
+                          )}
                         >
                           {/* Conversation Header */}
                           <button
@@ -192,7 +256,19 @@ export default function BECScanPage() {
                               {isOpen ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-foreground truncate">{conv.subject || "(No subject)"}</p>
+                              <div className="flex items-center gap-2">
+                                <p className="text-sm font-medium text-foreground truncate">{conv.subject || "(No subject)"}</p>
+                                {conv.keywords_matched.length > 4 && (
+                                  <Badge variant="secondary" className="text-[9px] bg-rose-500/10 text-rose-400 border-rose-500/20">
+                                    <AlertCircle className="h-3 w-3 mr-1" /> Critical
+                                  </Badge>
+                                )}
+                                {conv.keywords_matched.length > 2 && conv.keywords_matched.length <= 4 && (
+                                  <Badge variant="secondary" className="text-[9px] bg-amber-500/10 text-amber-400 border-amber-500/20">
+                                    <AlertTriangle className="h-3 w-3 mr-1" /> Suspicious
+                                  </Badge>
+                                )}
+                              </div>
                               <div className="flex items-center gap-3 mt-1">
                                 <span className="text-[11px] text-muted-foreground flex items-center gap-1">
                                   <MessageSquare className="h-3 w-3" /> {conv.message_count} msgs
@@ -204,10 +280,32 @@ export default function BECScanPage() {
                                   <Clock className="h-3 w-3" /> {new Date(conv.latest_date).toLocaleDateString()}
                                 </span>
                               </div>
+                              {/* Keyword bar */}
+                              <div className="mt-2">
+                                <div className="flex items-center gap-1.5 mb-1">
+                                  <span className="text-[10px] text-muted-foreground">{conv.keywords_matched.length} keywords matched</span>
+                                </div>
+                                <div className="h-1 w-full rounded-full bg-secondary/50 overflow-hidden">
+                                  <motion.div
+                                    initial={{ width: 0 }}
+                                    animate={{ width: `${Math.min(conv.keywords_matched.length * 10, 100)}%` }}
+                                    transition={{ duration: 0.6 }}
+                                    className={cn(
+                                      "h-full rounded-full",
+                                      conv.keywords_matched.length > 4 ? "bg-rose-400" : conv.keywords_matched.length > 2 ? "bg-amber-400" : "bg-emerald-400"
+                                    )}
+                                  />
+                                </div>
+                              </div>
                             </div>
                             <div className="flex flex-wrap gap-1 justify-end max-w-[200px]">
                               {conv.keywords_matched.slice(0, 4).map((kw) => (
-                                <Badge key={kw} variant="secondary" className="text-[9px] px-1.5 py-0 bg-primary/10 text-primary border-primary/20">
+                                <Badge key={kw} variant="secondary" className={cn(
+                                  "text-[9px] px-1.5 py-0",
+                                  conv.keywords_matched.length > 4
+                                    ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
+                                    : "bg-primary/10 text-primary border-primary/20"
+                                )}>
                                   {kw}
                                 </Badge>
                               ))}

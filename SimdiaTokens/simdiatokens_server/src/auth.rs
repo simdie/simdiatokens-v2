@@ -48,10 +48,6 @@ impl Role {
         matches!(self, Role::Admin | Role::Operator | Role::Viewer)
     }
 
-    pub fn can_run_ai_analysis(&self) -> bool {
-        matches!(self, Role::Admin | Role::Operator)
-    }
-
     pub fn can_create_rules(&self) -> bool {
         matches!(self, Role::Admin | Role::Operator)
     }

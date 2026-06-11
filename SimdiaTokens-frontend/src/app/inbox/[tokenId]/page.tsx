@@ -17,6 +17,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { SafeEmailViewer } from "@/components/safe-email";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -278,7 +279,6 @@ function ReadingPane({
   onDelete,
   onMarkUnread,
   onSummarize,
-  onAnalyze,
   summarizing,
   summary,
 }: {
@@ -289,7 +289,6 @@ function ReadingPane({
   onDelete: () => void;
   onMarkUnread: () => void;
   onSummarize: () => void;
-  onAnalyze: () => void;
   summarizing: boolean;
   summary: string | null;
 }) {
@@ -331,9 +330,6 @@ function ReadingPane({
         <div className="flex-1" />
         <Button variant="ghost" size="sm" onClick={onSummarize} disabled={summarizing} className="gap-1.5 h-8 text-xs text-amber-400">
           <Sparkles className={cn("h-3.5 w-3.5", summarizing && "animate-spin")} /> Summarize
-        </Button>
-        <Button variant="ghost" size="sm" onClick={onAnalyze} className="gap-1.5 h-8 text-xs text-rose-400">
-          <Brain className="h-3.5 w-3.5" /> Analyze
         </Button>
       </div>
 
@@ -385,39 +381,13 @@ function ReadingPane({
       </div>
 
       {/* Email Body */}
-      <ScrollArea className="flex-1">
-        <div className="px-6 py-5">
-          <div className="max-w-3xl mx-auto">
-            {contentType === "html" ? (
-              <div
-                className="prose prose-invert prose-sm max-w-none
-                  [&_a]:text-primary [&_a]:underline [&_img]:rounded-lg [&_img]:max-w-full
-                  [&_table]:w-full [&_table]:border-collapse
-                  [&_td]:border [&_td]:border-white/10 [&_td]:p-2 [&_td]:text-xs
-                  [&_th]:border [&_th]:border-white/10 [&_th]:p-2 [&_th]:text-xs
-                  [&_blockquote]:border-l-2 [&_blockquote]:border-primary/30 [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground
-                  [&_pre]:bg-secondary/30 [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:text-xs
-                  [&_code]:bg-secondary/30 [&_code]:rounded [&_code]:px-1 [&_code]:text-xs
-                  [&_ul]:list-disc [&_ul]:pl-4 [&_ol]:list-decimal [&_ol]:pl-4
-                  [&_li]:text-xs [&_li]:text-foreground/80
-                  [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm
-                  [&_p]:text-xs [&_p]:text-foreground/80 [&_p]:leading-relaxed"
-                dangerouslySetInnerHTML={{ __html: bodyContent }}
-              />
-            ) : (
-              <div
-                className="text-xs text-foreground/80 leading-relaxed whitespace-pre-wrap break-words"
-                dangerouslySetInnerHTML={{
-                  __html: bodyContent.replace(/\n/g, "<br>").replace(
-                    /(https?:\/\/[^\s<]+)/g,
-                    '<a href="$1" class="text-primary underline" target="_blank" rel="noopener noreferrer">$1</a>'
-                  ),
-                }}
-              />
-            )}
-          </div>
-        </div>
-      </ScrollArea>
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+        <SafeEmailViewer
+          htmlContent={bodyContent}
+          contentType={contentType === "html" ? "html" : "text"}
+          className="flex-1 flex flex-col"
+        />
+      </div>
     </div>
   );
 }
@@ -816,7 +786,6 @@ export default function InboxPage() {
           onDelete={handleDeleteMessage}
           onMarkUnread={handleMarkUnread}
           onSummarize={handleSummarize}
-          onAnalyze={() => router.push(`/analyze/${encodeURIComponent(tokenId!)}`)}
           summarizing={summarizing}
           summary={summary}
         />

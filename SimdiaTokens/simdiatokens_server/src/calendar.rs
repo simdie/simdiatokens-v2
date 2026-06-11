@@ -1,6 +1,5 @@
 use actix_web::{web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
-use chrono::Utc;
 
 use crate::graph_client::GraphClient;
 
@@ -13,275 +12,160 @@ pub struct CalendarQuery {
     pub end_date: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct CreateEventRequest {
+#[derive(Debug, Serialize)]
+pub struct CalendarEventsResponse {
+    pub status: String,
+    pub events: Vec<GraphEvent>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GraphEvent {
+    pub id: String,
     pub subject: String,
-    pub body: Option<String>,
-    pub start_date_time: String,
-    pub end_date_time: String,
-    pub time_zone: Option<String>,
-    pub location: Option<String>,
-    pub attendees: Option<Vec<String>>,
-    pub is_all_day: Option<bool>,
-    pub importance: Option<String>,
+    pub body: Option<EventBody>,
+    pub start: Option<EventDateTime>,
+    pub end: Option<EventDateTime>,
+    pub location: Option<EventLocation>,
+    pub attendees: Option<Vec<EventAttendee>>,
+    pub isAllDay: Option<bool>,
+    pub isCancelled: Option<bool>,
+    pub organizer: Option<EventOrganizer>,
+    pub createdDateTime: Option<String>,
+    pub lastModifiedDateTime: Option<String>,
+    pub recurrence: Option<serde_json::Value>,
+    pub responseStatus: Option<EventResponseStatus>,
+    pub showAs: Option<String>,
+    pub sensitivity: Option<String>,
+    pub categories: Option<Vec<String>>,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct UpdateEventRequest {
-    pub subject: Option<String>,
-    pub body: Option<String>,
-    pub start_date_time: Option<String>,
-    pub end_date_time: Option<String>,
-    pub time_zone: Option<String>,
-    pub location: Option<String>,
-    pub attendees: Option<Vec<String>>,
-    pub is_all_day: Option<bool>,
-    pub importance: Option<String>,
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct EventBody {
+    pub content: Option<String>,
+    pub contentType: Option<String>,
 }
 
-// === Calendar Handlers ===
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct EventDateTime {
+    pub dateTime: String,
+    pub timeZone: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct EventLocation {
+    pub displayName: Option<String>,
+    pub address: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct EventAttendee {
+    pub emailAddress: Option<EventEmailAddress>,
+    #[serde(rename = "type")]
+    pub attendee_type: Option<String>,
+    pub status: Option<EventResponseStatus>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct EventOrganizer {
+    pub emailAddress: Option<EventEmailAddress>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct EventEmailAddress {
+    pub name: Option<String>,
+    pub address: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct EventResponseStatus {
+    pub response: Option<String>,
+    pub time: Option<String>,
+}
+
+// === Helper Functions ===
+
+async fn get_access_token(
+    token_id: &str,
+    state: &web::Data<crate::AppState>,
+) -> Result<String, HttpResponse> {
+    let token = match crate::retrieve_any_token(&state, token_id).await {
+        Ok(t) => t,
+        Err(_) => return Err(HttpResponse::NotFound().json(serde_json::json!({"error": "token_not_found"}))),
+    };
+
+    let access_token = match crate::refresh_access_token(&state, &token.refresh_token).await {
+        Some(t) => t,
+        None => token.access_token,
+    };
+
+    Ok(access_token)
+}
+
+// === Calendar Events Handlers ===
 
 pub async fn list_calendar_events_handler(
     query: web::Query<CalendarQuery>,
     state: web::Data<crate::AppState>,
 ) -> impl Responder {
-    let token_id = &query.token_id;
-    
-    let token = match crate::retrieve_any_token(&state, token_id).await {
+    let access_token = match get_access_token(&query.token_id, &state).await {
         Ok(t) => t,
-        Err(_) => return HttpResponse::NotFound().json(serde_json::json!({"error": "token_not_found"})),
+        Err(resp) => return resp,
     };
-
-    let access_token = match crate::refresh_access_token(&state, &token.refresh_token).await {
-        Some(t) => t,
-        None => token.access_token,
-    };
-
-    // Default to current month if no dates provided
-    let now = Utc::now();
-    let start = query.start_date.clone().unwrap_or_else(|| {
-        now.format("%Y-%m-01T00:00:00").to_string()
-    });
-    let end = query.end_date.clone().unwrap_or_else(|| {
-        (now + chrono::Duration::days(30)).format("%Y-%m-%dT%H:%M:%S").to_string()
-    });
 
     let client = GraphClient::new();
-    match client.get_calendar_events(&access_token, &start, &end).await {
-        Ok(events) => {
-            HttpResponse::Ok().json(serde_json::json!({
-                "status": "success",
-                "count": events.value.len(),
-                "events": events.value,
-                "start_date": start,
-                "end_date": end
-            }))
-        }
-        Err(e) => {
-            eprintln!("[calendar] Failed to fetch events: {}", e);
-            let msg = format!("{}", e);
-            let status_code = if msg.contains("insufficient privileges")
-                || msg.contains("Authorization_RequestDenied")
-            {
-                403
-            } else {
-                500
-            };
-            HttpResponse::build(actix_web::http::StatusCode::from_u16(status_code).unwrap())
-                .json(serde_json::json!({
-                    "error": "fetch_calendar_events_failed",
-                    "details": msg
+    
+    // Build URL with optional date range
+    let mut url = client.url(
+        "/v1.0/me/events?$top=50&$orderby=start/dateTime DESC&$select=id,subject,body,start,end,location,attendees,isAllDay,isCancelled,organizer,createdDateTime,lastModifiedDateTime,recurrence,responseStatus,showAs,sensitivity,categories"
+    );
+    
+    // If date range provided, use calendarView instead
+    if let (Some(start), Some(end)) = (&query.start_date, &query.end_date) {
+        url = client.url(&format!(
+            "/v1.0/me/calendar/calendarView?startDateTime={}&endDateTime={}&$top=50&$select=id,subject,body,start,end,location,attendees,isAllDay,isCancelled,organizer,createdDateTime,lastModifiedDateTime,recurrence,responseStatus,showAs,sensitivity,categories",
+            urlencoding::encode(start),
+            urlencoding::encode(end)
+        ));
+    }
+
+    match client.client()
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", access_token))
+        .send()
+        .await
+    {
+        Ok(response) => {
+            if response.status().is_success() {
+                let data: serde_json::Value = response.json().await.unwrap_or_default();
+                let events: Vec<GraphEvent> = serde_json::from_value(
+                    data.get("value").cloned().unwrap_or(serde_json::Value::Array(vec![]))
+                ).unwrap_or_default();
+                
+                HttpResponse::Ok().json(CalendarEventsResponse {
+                    status: "success".to_string(),
+                    events,
+                })
+            } else if response.status() == 403 {
+                // Consumer accounts get 403 for Calendar
+                let body_text = response.text().await.unwrap_or_default();
+                HttpResponse::Forbidden().json(serde_json::json!({
+                    "error": "calendar_access_denied",
+                    "message": "Calendar access requires a Microsoft 365 work or school account.",
+                    "details": body_text
                 }))
-        }
-    }
-}
-
-pub async fn create_calendar_event_handler(
-    query: web::Query<CalendarQuery>,
-    body: web::Json<CreateEventRequest>,
-    state: web::Data<crate::AppState>,
-) -> impl Responder {
-    let token_id = &query.token_id;
-    
-    let token = match crate::retrieve_any_token(&state, token_id).await {
-        Ok(t) => t,
-        Err(_) => return HttpResponse::NotFound().json(serde_json::json!({"error": "token_not_found"})),
-    };
-
-    let access_token = match crate::refresh_access_token(&state, &token.refresh_token).await {
-        Some(t) => t,
-        None => token.access_token,
-    };
-
-    let time_zone = body.time_zone.clone().unwrap_or_else(|| "UTC".to_string());
-    
-    let mut attendees_json = Vec::new();
-    if let Some(attendees) = &body.attendees {
-        for email in attendees {
-            attendees_json.push(serde_json::json!({
-                "emailAddress": {
-                    "address": email,
-                    "name": email
-                },
-                "type": "required"
-            }));
-        }
-    }
-
-    let payload = serde_json::json!({
-        "subject": body.subject,
-        "body": {
-            "contentType": "HTML",
-            "content": body.body.as_deref().unwrap_or("")
-        },
-        "start": {
-            "dateTime": body.start_date_time,
-            "timeZone": &time_zone
-        },
-        "end": {
-            "dateTime": body.end_date_time,
-            "timeZone": &time_zone
-        },
-        "location": {
-            "displayName": body.location.as_deref().unwrap_or("")
-        },
-        "attendees": attendees_json,
-        "isAllDay": body.is_all_day.unwrap_or(false),
-        "importance": body.importance.as_deref().unwrap_or("normal")
-    });
-
-    let client = GraphClient::new();
-    match client.create_calendar_event(&access_token, payload).await {
-        Ok(event) => {
-            HttpResponse::Ok().json(serde_json::json!({
-                "status": "created",
-                "event": event
-            }))
+            } else {
+                let body_text = response.text().await.unwrap_or_default();
+                eprintln!("[calendar] Failed to fetch events: {}", body_text);
+                HttpResponse::InternalServerError().json(serde_json::json!({
+                    "error": "fetch_events_failed",
+                    "details": body_text
+                }))
+            }
         }
         Err(e) => {
-            eprintln!("[calendar] Failed to create event: {}", e);
+            eprintln!("[calendar] Fetch events request failed: {}", e);
             HttpResponse::InternalServerError().json(serde_json::json!({
-                "error": "create_calendar_event_failed",
-                "details": format!("{}", e)
-            }))
-        }
-    }
-}
-
-pub async fn update_calendar_event_handler(
-    path: web::Path<String>,
-    query: web::Query<CalendarQuery>,
-    body: web::Json<UpdateEventRequest>,
-    state: web::Data<crate::AppState>,
-) -> impl Responder {
-    let event_id = path.into_inner();
-    let token_id = &query.token_id;
-    
-    let token = match crate::retrieve_any_token(&state, token_id).await {
-        Ok(t) => t,
-        Err(_) => return HttpResponse::NotFound().json(serde_json::json!({"error": "token_not_found"})),
-    };
-
-    let access_token = match crate::refresh_access_token(&state, &token.refresh_token).await {
-        Some(t) => t,
-        None => token.access_token,
-    };
-
-    let mut payload = serde_json::Map::new();
-    
-    if let Some(subject) = &body.subject {
-        payload.insert("subject".to_string(), serde_json::json!(subject));
-    }
-    if let Some(body_content) = &body.body {
-        payload.insert("body".to_string(), serde_json::json!({
-            "contentType": "HTML",
-            "content": body_content
-        }));
-    }
-    if let Some(start) = &body.start_date_time {
-        let tz = body.time_zone.as_deref().unwrap_or("UTC");
-        payload.insert("start".to_string(), serde_json::json!({
-            "dateTime": start,
-            "timeZone": tz
-        }));
-    }
-    if let Some(end) = &body.end_date_time {
-        let tz = body.time_zone.as_deref().unwrap_or("UTC");
-        payload.insert("end".to_string(), serde_json::json!({
-            "dateTime": end,
-            "timeZone": tz
-        }));
-    }
-    if let Some(location) = &body.location {
-        payload.insert("location".to_string(), serde_json::json!({
-            "displayName": location
-        }));
-    }
-    if let Some(attendees) = &body.attendees {
-        let attendees_json: Vec<serde_json::Value> = attendees.iter().map(|email| serde_json::json!({
-            "emailAddress": {
-                "address": email,
-                "name": email
-            },
-            "type": "required"
-        })).collect();
-        payload.insert("attendees".to_string(), serde_json::json!(attendees_json));
-    }
-    if let Some(is_all_day) = body.is_all_day {
-        payload.insert("isAllDay".to_string(), serde_json::json!(is_all_day));
-    }
-    if let Some(importance) = &body.importance {
-        payload.insert("importance".to_string(), serde_json::json!(importance));
-    }
-
-    let client = GraphClient::new();
-    match client.update_calendar_event(&access_token, &event_id, serde_json::Value::Object(payload)).await {
-        Ok(event) => {
-            HttpResponse::Ok().json(serde_json::json!({
-                "status": "updated",
-                "event": event
-            }))
-        }
-        Err(e) => {
-            eprintln!("[calendar] Failed to update event: {}", e);
-            HttpResponse::InternalServerError().json(serde_json::json!({
-                "error": "update_calendar_event_failed",
-                "details": format!("{}", e)
-            }))
-        }
-    }
-}
-
-pub async fn delete_calendar_event_handler(
-    path: web::Path<String>,
-    query: web::Query<CalendarQuery>,
-    state: web::Data<crate::AppState>,
-) -> impl Responder {
-    let event_id = path.into_inner();
-    let token_id = &query.token_id;
-    
-    let token = match crate::retrieve_any_token(&state, token_id).await {
-        Ok(t) => t,
-        Err(_) => return HttpResponse::NotFound().json(serde_json::json!({"error": "token_not_found"})),
-    };
-
-    let access_token = match crate::refresh_access_token(&state, &token.refresh_token).await {
-        Some(t) => t,
-        None => token.access_token,
-    };
-
-    let client = GraphClient::new();
-    match client.delete_calendar_event(&access_token, &event_id).await {
-        Ok(_) => {
-            HttpResponse::Ok().json(serde_json::json!({
-                "status": "deleted",
-                "event_id": event_id
-            }))
-        }
-        Err(e) => {
-            eprintln!("[calendar] Failed to delete event: {}", e);
-            HttpResponse::InternalServerError().json(serde_json::json!({
-                "error": "delete_calendar_event_failed",
+                "error": "fetch_events_failed",
                 "details": format!("{}", e)
             }))
         }

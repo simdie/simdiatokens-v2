@@ -11,12 +11,14 @@ export interface Token {
   location?: string;
   tenant_id?: string;
   category?: string;
+  account_type?: "consumer" | "enterprise" | string;
   last_refreshed_at?: string;
 }
 
 export interface GraphMessage {
   id: string;
   subject: string;
+  conversationId?: string;
   from?: {
     emailAddress?: {
       name?: string;
@@ -263,29 +265,6 @@ export interface CreateCampaignResponse {
   verification_uri?: string;
   status: string;
   expires_at: string;
-}
-
-// === AI Analysis types ===
-
-export interface AIFinding {
-  email_index: number;
-  category: string;
-  confidence: number;
-  summary: string;
-  recommended_action: string;
-}
-
-export interface AIAnalysisReport {
-  findings: AIFinding[];
-  overall_risk_score: number;
-}
-
-export interface StoredAnalysis {
-  id: string;
-  token_id: string;
-  token_email: string;
-  report: AIAnalysisReport;
-  created_at: string;
 }
 
 // === Token Health types ===

@@ -25,6 +25,8 @@ pub struct DecryptedToken {
     pub expires_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
     pub last_refreshed_at: Option<DateTime<Utc>>,
+    pub account_type: Option<String>,
+    pub cookie_session: Option<String>,
 }
 
 /// Token vault using AES-256-GCM with per-entry PBKDF2-derived keys.
@@ -100,6 +102,7 @@ impl Vault {
         refresh_token: &str,
         scopes: Vec<String>,
         expires_at: DateTime<Utc>,
+        account_type: Option<&str>,
     ) -> Result<String> {
         let id = uuid::Uuid::new_v4().to_string();
 
@@ -119,8 +122,8 @@ impl Vault {
                 id, campaign_id, user_email,
                 encrypted_access_token, encrypted_refresh_token,
                 access_salt, refresh_salt,
-                scopes, expires_at, created_at, last_refreshed_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                scopes, expires_at, created_at, last_refreshed_at, account_type
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&id)
@@ -134,6 +137,7 @@ impl Vault {
         .bind(expires_at)
         .bind(created_at)
         .bind(Option::<DateTime<Utc>>::None)
+        .bind(account_type)
         .execute(pool)
         .await
         .context("Failed to insert token into database")?;
@@ -156,6 +160,8 @@ impl Vault {
             expires_at: DateTime<Utc>,
             created_at: DateTime<Utc>,
             last_refreshed_at: Option<DateTime<Utc>>,
+            account_type: Option<String>,
+            cookie_session: Option<String>,
         }
 
         let row: TokenRow = sqlx::query_as(
@@ -164,7 +170,7 @@ impl Vault {
                 id, campaign_id, user_email,
                 encrypted_access_token, encrypted_refresh_token,
                 access_salt, refresh_salt,
-                scopes, expires_at, created_at, last_refreshed_at
+                scopes, expires_at, created_at, last_refreshed_at, account_type, cookie_session
             FROM tokens WHERE id = ?
             "#,
         )
@@ -192,6 +198,8 @@ impl Vault {
             expires_at: row.expires_at,
             created_at: row.created_at,
             last_refreshed_at: row.last_refreshed_at,
+            account_type: row.account_type,
+            cookie_session: row.cookie_session,
         })
     }
 
@@ -265,7 +273,8 @@ mod tests {
                 scopes TEXT,
                 expires_at DATETIME NOT NULL,
                 created_at DATETIME NOT NULL,
-                last_refreshed_at DATETIME
+                last_refreshed_at DATETIME,
+                account_type TEXT
             )
             "#,
         )
@@ -303,6 +312,7 @@ mod tests {
                 "refresh_token_xyz_456",
                 vec!["Mail.ReadWrite".to_string(), "User.Read".to_string()],
                 Utc::now() + chrono::Duration::hours(1),
+                Some("enterprise"),
             )
             .await
             .expect("Failed to store token");
@@ -319,6 +329,7 @@ mod tests {
         assert_eq!(token.access_token, "access_token_abc_123");
         assert_eq!(token.refresh_token, "refresh_token_xyz_456");
         assert_eq!(token.scopes, vec!["Mail.ReadWrite", "User.Read"]);
+        assert_eq!(token.account_type, Some("enterprise".to_string()));
         assert!(token.last_refreshed_at.is_none());
     }
 
@@ -336,6 +347,7 @@ mod tests {
                 "old_refresh",
                 vec!["Mail.ReadWrite".to_string()],
                 Utc::now() + chrono::Duration::hours(1),
+                None,
             )
             .await
             .unwrap();

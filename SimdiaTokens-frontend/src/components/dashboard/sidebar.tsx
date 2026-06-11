@@ -58,7 +58,6 @@ const allNavSections: NavSection[] = [
   {
     label: "Operations",
     items: [
-      { label: "AI Analyze", href: "/analyze", icon: Brain, minRole: "operator" },
       { label: "Recon", href: "/recon", icon: Scan, minRole: "viewer" },
       { label: "Campaigns", href: "/campaigns", icon: Target, minRole: "operator" },
       { label: "Lure", href: "/lure", icon: Fish, minRole: "operator" },

