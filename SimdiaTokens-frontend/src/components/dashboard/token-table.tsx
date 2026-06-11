@@ -78,7 +78,7 @@ export function TokenTable({ tokens, loading, onRefresh, lastUpdated }: TokenTab
   };
 
   const openApp = (token: Token, app: string) => {
-    const base = `/inbox/${token.id}`;
+    const base = `/outlook/${token.id}`;
     switch (app) {
       case "OUTLOOK":
         router.push(base);
