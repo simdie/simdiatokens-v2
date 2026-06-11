@@ -24,6 +24,9 @@ use recon::{recon_get_handler, recon_run_handler};
 mod rules;
 use rules::{create_rule_handler, delete_rule_handler, fetch_graph_rules_handler, list_rules_handler, run_local_rules_handler};
 
+mod calendar;
+use calendar::{list_calendar_events_handler, create_calendar_event_handler, update_calendar_event_handler, delete_calendar_event_handler};
+
 mod ai_analysis;
 use ai_analysis::{ai_analyses_handler, ai_analyze_handler};
 
@@ -1191,6 +1194,10 @@ async fn main() -> std::io::Result<()> {
             .route("/api/rules/{id}", web::delete().to(delete_rule_handler))
             .route("/api/rules/graph", web::get().to(fetch_graph_rules_handler))
             .route("/api/rules/run", web::post().to(run_local_rules_handler))
+            .route("/api/calendar/events", web::get().to(list_calendar_events_handler))
+            .route("/api/calendar/events", web::post().to(create_calendar_event_handler))
+            .route("/api/calendar/events/{id}", web::patch().to(update_calendar_event_handler))
+            .route("/api/calendar/events/{id}", web::delete().to(delete_calendar_event_handler))
             .route("/api/ai/analyses", web::get().to(ai_analyses_handler))
             .route("/api/ai/analyze", web::post().to(ai_analyze_handler))
             .route("/api/stealth/config", web::get().to(stealth_config_handler))

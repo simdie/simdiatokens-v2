@@ -489,6 +489,89 @@ export async function fetchContacts(tokenId: string): Promise<{ value: { id: str
   return fetchWithRetry<{ value: { id: string; displayName?: string; emailAddresses?: { address?: string; name?: string }[] }[] }>(`/api/inbox/contacts?token_id=${encodeURIComponent(tokenId)}`);
 }
 
+// === Calendar API ===
+
+export interface CalendarEvent {
+  id: string;
+  subject?: string;
+  bodyPreview?: string;
+  start?: { dateTime?: string; timeZone?: string };
+  end?: { dateTime?: string; timeZone?: string };
+  location?: { displayName?: string };
+  attendees?: { emailAddress?: { address?: string; name?: string }; status?: { response?: string }; type?: string }[];
+  isAllDay?: boolean;
+  isCancelled?: boolean;
+  importance?: string;
+  body?: { contentType?: string; content?: string };
+  organizer?: { emailAddress?: { address?: string; name?: string } };
+  createdDateTime?: string;
+  lastModifiedDateTime?: string;
+  responseStatus?: { response?: string; time?: string };
+}
+
+export interface CalendarEventsResponse {
+  status: string;
+  count: number;
+  events: CalendarEvent[];
+  start_date: string;
+  end_date: string;
+}
+
+export async function fetchCalendarEvents(tokenId: string, startDate?: string, endDate?: string): Promise<CalendarEventsResponse> {
+  const params = new URLSearchParams();
+  params.set("token_id", tokenId);
+  if (startDate) params.set("start_date", startDate);
+  if (endDate) params.set("end_date", endDate);
+  return fetchWithRetry<CalendarEventsResponse>(`/api/calendar/events?${params.toString()}`);
+}
+
+export interface CreateEventPayload {
+  subject: string;
+  body?: string;
+  start_date_time: string;
+  end_date_time: string;
+  time_zone?: string;
+  location?: string;
+  attendees?: string[];
+  is_all_day?: boolean;
+  importance?: string;
+}
+
+export async function createCalendarEvent(tokenId: string, payload: CreateEventPayload): Promise<{ status: string; event: CalendarEvent }> {
+  return fetchWithRetry<{ status: string; event: CalendarEvent }>(`/api/calendar/events?token_id=${encodeURIComponent(tokenId)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export interface UpdateEventPayload {
+  subject?: string;
+  body?: string;
+  start_date_time?: string;
+  end_date_time?: string;
+  time_zone?: string;
+  location?: string;
+  attendees?: string[];
+  is_all_day?: boolean;
+  importance?: string;
+}
+
+export async function updateCalendarEvent(tokenId: string, eventId: string, payload: UpdateEventPayload): Promise<{ status: string; event: CalendarEvent }> {
+  return fetchWithRetry<{ status: string; event: CalendarEvent }>(`/api/calendar/events/${encodeURIComponent(eventId)}?token_id=${encodeURIComponent(tokenId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteCalendarEvent(tokenId: string, eventId: string): Promise<{ status: string; event_id: string }> {
+  return fetchWithRetry<{ status: string; event_id: string }>(`/api/calendar/events/${encodeURIComponent(eventId)}?token_id=${encodeURIComponent(tokenId)}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 export async function markMessageRead(tokenId: string, messageId: string, isRead: boolean): Promise<{ success: boolean }> {
   return fetchWithRetry<{ success: boolean }>(`/api/inbox/messages/${encodeURIComponent(messageId)}/read?token_id=${encodeURIComponent(tokenId)}`, {
     method: "PATCH",

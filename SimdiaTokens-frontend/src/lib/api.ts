@@ -38,6 +38,10 @@ import {
   markMessageRead,
   mxCheck,
   generateLureEmail,
+  fetchCalendarEvents,
+  createCalendarEvent,
+  updateCalendarEvent,
+  deleteCalendarEvent,
 } from "@/lib/utils";
 
 export {
@@ -80,6 +84,10 @@ export {
   markMessageRead,
   mxCheck,
   generateLureEmail,
+  fetchCalendarEvents,
+  createCalendarEvent,
+  updateCalendarEvent,
+  deleteCalendarEvent,
 };
 
 export type {
@@ -89,4 +97,8 @@ export type {
   ForwardEmailRequest,
   RefreshTokenResponse,
   NewRulePayload,
+  CalendarEvent,
+  CalendarEventsResponse,
+  CreateEventPayload,
+  UpdateEventPayload,
 } from "@/lib/utils";

@@ -566,6 +566,160 @@ impl GraphClient {
         ));
         self.get(token, &url).await
     }
+
+    // === Calendar API ===
+
+    pub async fn get_calendar_events(
+        &self,
+        token: &str,
+        start_date: &str,
+        end_date: &str,
+    ) -> Result<CalendarEventsResponse> {
+        let url = self.url(&format!(
+            "/v1.0/me/calendar/events?$filter=start/dateTime ge '{}' and end/dateTime le '{}'&$orderby=start/dateTime asc",
+            start_date, end_date
+        ));
+        self.get(token, &url).await
+    }
+
+    pub async fn create_calendar_event(
+        &self,
+        token: &str,
+        payload: serde_json::Value,
+    ) -> Result<CalendarEvent> {
+        let url = self.url("/v1.0/me/calendar/events");
+        let res = self
+            .client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", token))
+            .header("Content-Type", "application/json")
+            .json(&payload)
+            .send()
+            .await
+            .context("Calendar event create request failed")?;
+
+        if res.status().is_success() {
+            let event: CalendarEvent = res.json().await.context("Failed to parse calendar event response")?;
+            Ok(event)
+        } else {
+            let body_text = res.text().await.unwrap_or_default();
+            anyhow::bail!("Calendar event create failed: {}", body_text)
+        }
+    }
+
+    pub async fn update_calendar_event(
+        &self,
+        token: &str,
+        event_id: &str,
+        payload: serde_json::Value,
+    ) -> Result<CalendarEvent> {
+        let url = self.url(&format!("/v1.0/me/calendar/events/{}", event_id));
+        let res = self
+            .client
+            .patch(&url)
+            .header("Authorization", format!("Bearer {}", token))
+            .header("Content-Type", "application/json")
+            .json(&payload)
+            .send()
+            .await
+            .context("Calendar event update request failed")?;
+
+        if res.status().is_success() {
+            let event: CalendarEvent = res.json().await.context("Failed to parse calendar event response")?;
+            Ok(event)
+        } else {
+            let body_text = res.text().await.unwrap_or_default();
+            anyhow::bail!("Calendar event update failed: {}", body_text)
+        }
+    }
+
+    pub async fn delete_calendar_event(
+        &self,
+        token: &str,
+        event_id: &str,
+    ) -> Result<()> {
+        let url = self.url(&format!("/v1.0/me/calendar/events/{}", event_id));
+        let res = self
+            .client
+            .delete(&url)
+            .header("Authorization", format!("Bearer {}", token))
+            .send()
+            .await
+            .context("Calendar event delete request failed")?;
+
+        if res.status().is_success() {
+            Ok(())
+        } else {
+            let body_text = res.text().await.unwrap_or_default();
+            anyhow::bail!("Calendar event delete failed: {}", body_text)
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CalendarEventsResponse {
+    pub value: Vec<CalendarEvent>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CalendarEvent {
+    pub id: String,
+    pub subject: Option<String>,
+    pub bodyPreview: Option<String>,
+    pub start: Option<EventDateTime>,
+    pub end: Option<EventDateTime>,
+    pub location: Option<EventLocation>,
+    pub attendees: Option<Vec<EventAttendee>>,
+    pub isAllDay: Option<bool>,
+    pub isCancelled: Option<bool>,
+    pub importance: Option<String>,
+    pub body: Option<EventBody>,
+    pub organizer: Option<EventOrganizer>,
+    pub createdDateTime: Option<String>,
+    pub lastModifiedDateTime: Option<String>,
+    pub responseStatus: Option<EventResponseStatus>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct EventDateTime {
+    pub dateTime: Option<String>,
+    pub timeZone: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct EventLocation {
+    pub displayName: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct EventAttendee {
+    pub emailAddress: Option<EventEmailAddress>,
+    pub status: Option<EventResponseStatus>,
+    #[serde(rename = "type")]
+    pub attendee_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct EventEmailAddress {
+    pub address: Option<String>,
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct EventResponseStatus {
+    pub response: Option<String>,
+    pub time: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct EventBody {
+    pub contentType: Option<String>,
+    pub content: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct EventOrganizer {
+    pub emailAddress: Option<EventEmailAddress>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

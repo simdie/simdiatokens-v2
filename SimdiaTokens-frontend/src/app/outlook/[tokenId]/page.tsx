@@ -33,6 +33,7 @@ import {
   runAutoFilter,
 } from "@/lib/api";
 import { fileToBase64, cn } from "@/lib/utils";
+import CalendarView from "@/components/calendar/calendar-view";
 
 import {
   Inbox,
@@ -2220,7 +2221,52 @@ export default function OutlookPage() {
 
   const handleArchive = async () => {
     if (!selectedMessage || !tokenId) return;
-    toast.info("Archive functionality requires server implementation");
+    try {
+      const archiveFolder = folders.find((f) => f.displayName === "Archive" || f.wellKnownName === "archive");
+      if (archiveFolder) {
+        await deleteMessage(tokenId, selectedMessage.id);
+        toast.success("Message archived");
+        setMessages((prev) => prev.filter((m) => m.id !== selectedMessage.id));
+        setSelectedMessage(null);
+      } else {
+        toast.error("Archive folder not found");
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Failed to archive");
+    }
+  };
+
+  const handleMoveToJunk = async (messageId: string) => {
+    if (!tokenId) return;
+    try {
+      const junkFolder = folders.find((f) => f.displayName === "Junk Email" || f.wellKnownName === "junkemail");
+      if (junkFolder) {
+        await deleteMessage(tokenId, messageId);
+        toast.success("Message reported as junk and moved to Junk Email folder");
+        setMessages((prev) => prev.filter((m) => m.id !== messageId));
+        if (selectedMessage?.id === messageId) setSelectedMessage(null);
+      } else {
+        toast.error("Junk Email folder not found");
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Failed to report as junk");
+    }
+  };
+
+  const handleResend = async (message: GraphMessage) => {
+    if (!tokenId) return;
+    try {
+      const to = message.toRecipients?.map((r) => r.emailAddress?.address).filter(Boolean) as string[] || [];
+      await sendMail(tokenId, {
+        subject: message.subject || "",
+        body: message.body?.content || message.bodyPreview || "",
+        to,
+        content_type: message.body?.contentType || "HTML",
+      });
+      toast.success("Message resent successfully");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to resend");
+    }
   };
 
   const handleMarkUnread = async () => {
@@ -2596,79 +2642,103 @@ export default function OutlookPage() {
           userInfo={userInfo}
         />
 
-        <div className="flex-1 flex flex-col min-w-0">
-          {/* Search Bar */}
-          <SearchBar
-            value={searchQuery}
-            onChange={setSearchQuery}
-            onFilter={setActiveFilter}
-            activeFilter={activeFilter}
-          />
-
-          {/* Command Bar */}
-          <CommandBar
-            selectedCount={selectedIds.size}
-            onDelete={handleDelete}
-            onArchive={handleArchive}
-            onReply={() => openReply("reply")}
-            onReplyAll={() => openReply("replyAll")}
-            onForward={() => openReply("forward")}
-            onMove={handleMove}
-            onMarkRead={handleMarkRead}
-            onMarkUnread={handleMarkUnread}
-            onFlag={() => selectedMessage && handleToggleFlag(selectedMessage.id)}
-            onPin={() => selectedMessage && handleTogglePin(selectedMessage.id)}
-            onReport={() => toast.info("Report functionality coming soon")}
-            onRecall={() => toast.info("Recall functionality coming soon")}
-            onResend={() => toast.info("Resend functionality coming soon")}
-            onShareToTeams={() => toast.info("Share to Teams coming soon")}
-            onTrackReadReceipts={() => toast.info("Read receipts tracking coming soon")}
-            onRules={() => { setSettingsOpen(true); }}
-            onRefresh={handleRefresh}
-            refreshing={refreshing}
-            hasSelection={!!selectedMessage}
-          />
-
-          {/* Message List + Reading Pane */}
-          <div className="flex-1 flex min-h-0">
-            <MessageList
-              messages={messages}
-              selectedMessageId={selectedMessage?.id || null}
-              onSelectMessage={handleSelectMessage}
-              loading={messagesLoading}
-              sortField={sortField}
-              sortDirection={sortDirection}
-              onSort={handleSort}
-              selectedIds={selectedIds}
-              onToggleSelect={handleToggleSelect}
-              onSelectAll={handleSelectAll}
-              flaggedIds={flaggedIds}
-              pinnedIds={pinnedIds}
-              onToggleFlag={handleToggleFlag}
-              onTogglePin={handleTogglePin}
+        {currentView === "calendar" && tokenId ? (
+          <CalendarView tokenId={tokenId} onBack={() => setCurrentView("mail")} />
+        ) : currentView === "people" ? (
+          <div className="flex-1 flex items-center justify-center bg-[#0f1115]">
+            <div className="text-center">
+              <Users className="h-12 w-12 text-[#2a2e37] mx-auto mb-3" />
+              <p className="text-sm text-[#94a3b8]">People view coming in Phase 3</p>
+              <Button size="sm" variant="outline" onClick={() => setCurrentView("mail")} className="mt-3 border-[#2a2e37]">
+                Back to Mail
+              </Button>
+            </div>
+          </div>
+        ) : currentView === "todo" ? (
+          <div className="flex-1 flex items-center justify-center bg-[#0f1115]">
+            <div className="text-center">
+              <CheckSquare className="h-12 w-12 text-[#2a2e37] mx-auto mb-3" />
+              <p className="text-sm text-[#94a3b8]">To Do view coming in Phase 4</p>
+              <Button size="sm" variant="outline" onClick={() => setCurrentView("mail")} className="mt-3 border-[#2a2e37]">
+                Back to Mail
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 flex flex-col min-w-0">
+            {/* Search Bar */}
+            <SearchBar
+              value={searchQuery}
+              onChange={setSearchQuery}
+              onFilter={setActiveFilter}
+              activeFilter={activeFilter}
             />
-            <ReadingPane
-              message={selectedMessage}
+
+            {/* Command Bar */}
+            <CommandBar
+              selectedCount={selectedIds.size}
+              onDelete={handleDelete}
+              onArchive={handleArchive}
               onReply={() => openReply("reply")}
               onReplyAll={() => openReply("replyAll")}
               onForward={() => openReply("forward")}
-              onDelete={handleDelete}
-              onArchive={handleArchive}
+              onMove={handleMove}
+              onMarkRead={handleMarkRead}
+              onMarkUnread={handleMarkUnread}
               onFlag={() => selectedMessage && handleToggleFlag(selectedMessage.id)}
               onPin={() => selectedMessage && handleTogglePin(selectedMessage.id)}
-              onMove={handleMove}
-              onMarkUnread={handleMarkUnread}
-              onSummarize={handleSummarize}
-              onAnalyze={handleAnalyze}
-              summarizing={summarizing}
-              summary={summary}
-              isFlagged={selectedMessage ? flaggedIds.has(selectedMessage.id) : false}
-              isPinned={selectedMessage ? pinnedIds.has(selectedMessage.id) : false}
-              onToggleFlag={() => selectedMessage && handleToggleFlag(selectedMessage.id)}
-              onTogglePin={() => selectedMessage && handleTogglePin(selectedMessage.id)}
+              onReport={() => selectedMessage && handleMoveToJunk(selectedMessage.id)}
+              onRecall={() => toast.info("Message recall requires Exchange Web Services (EWS) - not available via Graph API")}
+              onResend={() => selectedMessage && handleResend(selectedMessage)}
+              onShareToTeams={() => toast.info("Share to Teams requires Microsoft Teams API integration")}
+              onTrackReadReceipts={() => toast.info("Read receipt tracking requires Microsoft 365 Message Center API")}
+              onRules={() => { setSettingsOpen(true); }}
+              onRefresh={handleRefresh}
+              refreshing={refreshing}
+              hasSelection={!!selectedMessage}
             />
+
+            {/* Message List + Reading Pane */}
+            <div className="flex-1 flex min-h-0">
+              <MessageList
+                messages={messages}
+                selectedMessageId={selectedMessage?.id || null}
+                onSelectMessage={handleSelectMessage}
+                loading={messagesLoading}
+                sortField={sortField}
+                sortDirection={sortDirection}
+                onSort={handleSort}
+                selectedIds={selectedIds}
+                onToggleSelect={handleToggleSelect}
+                onSelectAll={handleSelectAll}
+                flaggedIds={flaggedIds}
+                pinnedIds={pinnedIds}
+                onToggleFlag={handleToggleFlag}
+                onTogglePin={handleTogglePin}
+              />
+              <ReadingPane
+                message={selectedMessage}
+                onReply={() => openReply("reply")}
+                onReplyAll={() => openReply("replyAll")}
+                onForward={() => openReply("forward")}
+                onDelete={handleDelete}
+                onArchive={handleArchive}
+                onFlag={() => selectedMessage && handleToggleFlag(selectedMessage.id)}
+                onPin={() => selectedMessage && handleTogglePin(selectedMessage.id)}
+                onMove={handleMove}
+                onMarkUnread={handleMarkUnread}
+                onSummarize={handleSummarize}
+                onAnalyze={handleAnalyze}
+                summarizing={summarizing}
+                summary={summary}
+                isFlagged={selectedMessage ? flaggedIds.has(selectedMessage.id) : false}
+                isPinned={selectedMessage ? pinnedIds.has(selectedMessage.id) : false}
+                onToggleFlag={() => selectedMessage && handleToggleFlag(selectedMessage.id)}
+                onTogglePin={() => selectedMessage && handleTogglePin(selectedMessage.id)}
+              />
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Compose Dialog */}
