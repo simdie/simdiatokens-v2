@@ -24,6 +24,7 @@ import {
   CheckCircle2,
   XCircle,
   AlertCircle,
+  Gavel,
 } from "lucide-react";
 import { Token } from "@/types/token";
 import { formatDistanceToNow, isPast } from "date-fns";
@@ -274,6 +275,15 @@ export function TokenTable({ tokens, loading, onRefresh, lastUpdated }: TokenTab
                       >
                         <ExternalLink className="h-3.5 w-3.5" />
                         OUTLOOK
+                      </button>
+                      
+                      <button
+                        onClick={() => router.push(`/rules/${token.id}`)}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20 text-xs font-medium hover:bg-amber-500/20 transition-colors"
+                        title="Manage rules"
+                      >
+                        <Gavel className="h-3.5 w-3.5" />
+                        Rules
                       </button>
                       
                       <button

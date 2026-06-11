@@ -265,6 +265,35 @@ export async function fetchRules(tokenId: string): Promise<Rule[]> {
   return fetchWithRetry<Rule[]>(`/api/rules?token_id=${encodeURIComponent(tokenId)}`);
 }
 
+export async function fetchGraphRules(tokenId: string): Promise<{ status: string; count: number; rules: any[] }> {
+  return fetchWithRetry<{ status: string; count: number; rules: any[] }>(`/api/rules/graph?token_id=${encodeURIComponent(tokenId)}`);
+}
+
+export interface NewRulePayload {
+  token_id: string;
+  rule_name: string;
+  condition_subject_contains: string[];
+  condition_sender_domain: string[];
+  action_move_to_folder?: string | null;
+  action_forward_to?: string | null;
+  stop_processing: boolean;
+}
+
+export async function createRule(payload: NewRulePayload): Promise<{ status: string; rule_id: string; graph_rule_id?: string; target_folder_id?: string; rule_payload: any }> {
+  return fetchWithRetry<{ status: string; rule_id: string; graph_rule_id?: string; target_folder_id?: string; rule_payload: any }>("/api/rules/create", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteRule(ruleId: string): Promise<{ status: string; rule_id: string; graph_deleted: boolean; message: string }> {
+  return fetchWithRetry<{ status: string; rule_id: string; graph_deleted: boolean; message: string }>(`/api/rules/${encodeURIComponent(ruleId)}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 // === Recon API ===
 
 export async function runRecon(tokenId: string): Promise<ReconReport> {
