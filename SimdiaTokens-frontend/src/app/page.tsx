@@ -20,16 +20,9 @@ export default function DashboardPage() {
     isError,
   } = useQuery({
     queryKey: ["tokens"],
-    queryFn: async () => {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || "https://simdiatokens-server-production.up.railway.app"}/api/tokens`,
-        { signal: AbortSignal.timeout(3000) }
-      );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.json();
-    },
+    queryFn: fetchTokens,
     refetchInterval: 15_000,
-    retry: 0,
+    retry: 2,
   });
 
   const loadTokens = useCallback(() => {

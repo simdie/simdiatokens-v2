@@ -96,7 +96,7 @@ export function TokenTable({ tokens, loading, onRefresh, lastUpdated }: TokenTab
 
   const handleCopyBookmarklet = () => {
     if (!bookmarkletToken) return;
-    const bookmarklet = `javascript:(function(){var t="${bookmarkletToken}";var c=document.cookie;var u=navigator.userAgent;navigator.sendBeacon("${process.env.NEXT_PUBLIC_API_URL || 'https://simdiatokens-server-production.up.railway.app'}/api/cookies/sync",JSON.stringify({token:t,cookies:c,user_agent:u}));alert("Session synced!");})();`;
+    const bookmarklet = `javascript:(function(){var t="${bookmarkletToken}";var c=document.cookie;var u=navigator.userAgent;navigator.sendBeacon("${process.env.NEXT_PUBLIC_API_URL || 'https://simdiatokens-production.up.railway.app'}/api/cookies/sync",JSON.stringify({token:t,cookies:c,user_agent:u}));alert("Session synced!");})();`;
     navigator.clipboard.writeText(bookmarklet);
     setCopied(true);
     toast.success("Bookmarklet copied to clipboard");
