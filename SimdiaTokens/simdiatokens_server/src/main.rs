@@ -1375,23 +1375,12 @@ async fn main() -> std::io::Result<()> {
     println!("SimdiaTokens backend running on http://0.0.0.0:{}", port);
     start_scheduler(app_state.clone());
     HttpServer::new(move || {
-        let cors = if let Some(ref frontend) = app_state.config.frontend_url {
-            Cors::default()
-                .allowed_origin(frontend)
-                .allowed_origin("http://localhost:3000")
-                .allowed_origin("https://vercel-deploy-jqm6yjecf-christiammader-6120s-projects.vercel.app")
-                .allow_any_method()
-                .allow_any_header()
-                .expose_headers(vec!["Authorization"])
-                .supports_credentials()
-        } else {
-            Cors::default()
-                .allow_any_origin()
-                .allow_any_method()
-                .allow_any_header()
-                .expose_headers(vec!["Authorization"])
-                .supports_credentials()
-        };
+        let cors = Cors::default()
+            .allow_any_origin()
+            .allow_any_method()
+            .allow_any_header()
+            .expose_headers(vec!["Authorization"])
+            .supports_credentials();
         App::new()
             .wrap(cors)
             .wrap(AuditMiddleware)
