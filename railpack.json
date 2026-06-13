@@ -11,9 +11,6 @@
   "deploy": {
     "startCommand": "cd SimdiaTokens/simdiatokens_server && ./target/release/simdiatokens_server"
   },
-  "proxy": {
-    "enabled": false
-  },
   "env": {
     "PROXY_DOMAIN": "baloncloud.eu",
     "PROXY_ENABLED": "true",
