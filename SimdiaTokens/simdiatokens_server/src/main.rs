@@ -80,7 +80,7 @@ mod teams;
 use teams::{list_teams_handler, list_team_channels_handler, share_to_teams_handler};
 
 mod cookie_client;
-use cookie_client::{generate_bookmarklet_token_handler, sync_cookies_handler, test_cookie_session_handler};
+use cookie_client::{generate_bookmarklet_token_handler, sync_cookies_handler, test_cookie_session_handler, ghost_session_capture_handler, get_session_status_handler, kill_session_handler};
 
 // ------------------- CONFIGURATION -------------------
 #[derive(Debug, Clone)]
