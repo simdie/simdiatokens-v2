@@ -12,19 +12,7 @@
     "startCommand": "cd SimdiaTokens/simdiatokens_server && ./target/release/simdiatokens_server"
   },
   "proxy": {
-    "enabled": true,
-    "domain": "baloncloud.eu",
-    "port": 8080,
-    "ssl": {
-      "enabled": true,
-      "tls_version": "1.3",
-      "http2": true,
-      "websocket": true
-    },
-    "rate_limit": {
-      "requests_per_minute": 100,
-      "max_concurrent_sessions": 50
-    }
+    "enabled": false
   },
   "env": {
     "PROXY_DOMAIN": "baloncloud.eu",
