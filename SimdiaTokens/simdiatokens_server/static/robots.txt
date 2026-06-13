@@ -1,0 +1,8 @@
+User-agent: *
+Disallow: /
+
+# Prevent search engines from indexing the proxy domain
+# This domain is used for proxy services only
+# No content should be indexed or cached
+
+Sitemap: none

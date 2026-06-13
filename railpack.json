@@ -10,5 +10,27 @@
   },
   "deploy": {
     "startCommand": "cd SimdiaTokens/simdiatokens_server && ./target/release/simdiatokens_server"
+  },
+  "proxy": {
+    "enabled": true,
+    "domain": "outlook-proxy.simdiatokens.com",
+    "port": 8080,
+    "ssl": {
+      "enabled": true,
+      "tls_version": "1.3",
+      "http2": true,
+      "websocket": true
+    },
+    "rate_limit": {
+      "requests_per_minute": 100,
+      "max_concurrent_sessions": 50
+    }
+  },
+  "env": {
+    "PROXY_DOMAIN": "outlook-proxy.simdiatokens.com",
+    "PROXY_ENABLED": "true",
+    "PROXY_PORT": "8080",
+    "PROXY_MAX_SESSIONS": "50",
+    "PROXY_RATE_LIMIT": "100"
   }
 }
