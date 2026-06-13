@@ -82,6 +82,12 @@ fn build_proxy_headers(req: &HttpRequest, config: &ProxyConfig) -> reqwest::head
             continue;
         }
         
+        // Skip accept-encoding to prevent Microsoft from sending gzip-compressed responses
+        // We can't rewrite compressed content, so we ask for plain text
+        if name_str == "accept-encoding" {
+            continue;
+        }
+        
         // Forward other headers
         if let Ok(value) = reqwest::header::HeaderValue::from_bytes(value.as_bytes()) {
             if let Ok(name) = reqwest::header::HeaderName::from_bytes(name.as_str().as_bytes()) {
@@ -106,6 +112,12 @@ fn build_proxy_headers(req: &HttpRequest, config: &ProxyConfig) -> reqwest::head
     headers.insert(
         "X-Forwarded-Proto",
         reqwest::header::HeaderValue::from_static("https"),
+    );
+    
+    // Prevent server from sending compressed responses (we can't rewrite gzip)
+    headers.insert(
+        "Accept-Encoding",
+        reqwest::header::HeaderValue::from_static("identity"),
     );
     
     headers
@@ -291,6 +303,11 @@ pub async fn proxy_handler(
             continue;
         }
         
+        // Skip content-encoding - we request uncompressed content
+        if name_str == "content-encoding" || name_str == "transfer-encoding" {
+            continue;
+        }
+        
         // Forward other headers as-is
         if let Ok(header_value) = header::HeaderValue::from_bytes(value.as_bytes()) {
             resp.append_header((name.clone(), header_value));
@@ -311,23 +328,30 @@ pub async fn proxy_handler(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
     
-    // Determine body content and size
+    // Check if body is valid UTF-8 (to avoid trying to rewrite binary content)
+    let body_text = String::from_utf8(body_bytes.to_vec());
+    
     let body_content: String;
     let body_size: usize;
     
-    if content_type.contains("text/html") || content_type.contains("application/xhtml") {
-        let html = String::from_utf8_lossy(&body_bytes);
+    if body_text.is_ok() && (content_type.contains("text/html") || content_type.contains("application/xhtml")) {
+        let html = body_text.unwrap();
         body_content = rewrite_html_content(&html, config);
         body_size = body_content.len();
-    } else if content_type.contains("javascript") || content_type.contains("json") {
-        let js = String::from_utf8_lossy(&body_bytes);
+    } else if body_text.is_ok() && (content_type.contains("javascript") || content_type.contains("json")) {
+        let js = body_text.unwrap();
         body_content = rewrite_js_content(&js, config);
         body_size = body_content.len();
-    } else if content_type.contains("css") {
-        let css = String::from_utf8_lossy(&body_bytes);
+    } else if body_text.is_ok() && content_type.contains("css") {
+        let css = body_text.unwrap();
         body_content = rewrite_css_content(&css, config);
         body_size = body_content.len();
+    } else if body_text.is_ok() && content_type.contains("text") {
+        // Other text content
+        body_content = body_text.unwrap();
+        body_size = body_content.len();
     } else {
+        // Binary content - forward as bytes without rewriting
         body_content = String::from_utf8_lossy(&body_bytes).to_string();
         body_size = body_content.len();
     };
