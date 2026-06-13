@@ -744,6 +744,64 @@ async fn api_delete_tokens(
     let mut deleted_vault = 0u64;
 
     for id in &body.token_ids {
+        // Delete related records first to avoid foreign key constraint violations
+        let _ = sqlx::query("DELETE FROM proxy_sessions WHERE token_id = ?")
+            .bind(id)
+            .execute(&state.pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM captured_cookies WHERE token_id = ?")
+            .bind(id)
+            .execute(&state.pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM rules WHERE token_id = ?")
+            .bind(id)
+            .execute(&state.pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM recon_reports WHERE token_id = ?")
+            .bind(id)
+            .execute(&state.pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM audit_logs WHERE token_id = ?")
+            .bind(id)
+            .execute(&state.pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM campaigns WHERE token_id = ?")
+            .bind(id)
+            .execute(&state.pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM inbox_messages WHERE token_id = ?")
+            .bind(id)
+            .execute(&state.pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM local_folders WHERE token_id = ?")
+            .bind(id)
+            .execute(&state.pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM tasks WHERE token_id = ?")
+            .bind(id)
+            .execute(&state.pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM contacts WHERE token_id = ?")
+            .bind(id)
+            .execute(&state.pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM drive_items WHERE token_id = ?")
+            .bind(id)
+            .execute(&state.pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM office_docs WHERE token_id = ?")
+            .bind(id)
+            .execute(&state.pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM calendar_events WHERE token_id = ?")
+            .bind(id)
+            .execute(&state.pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM teams WHERE token_id = ?")
+            .bind(id)
+            .execute(&state.pool)
+            .await;
+
         let r1 = sqlx::query("DELETE FROM harvested WHERE id = ?")
             .bind(id)
             .execute(&state.pool)
