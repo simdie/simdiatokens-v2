@@ -472,6 +472,8 @@ pub fn start_scheduler(state: web::Data<AppState>) {
         loop {
             interval.tick().await;
             run_session_refresh_cycle(&state2).await;
+            // Also run proxy session refresh cycle
+            crate::proxy_session::run_proxy_session_refresh_cycle(state2.clone()).await;
         }
     });
 }

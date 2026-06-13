@@ -91,6 +91,9 @@ use proxy::{proxy_handler, proxy_status_handler, proxy_health_check, proxy_test_
 mod cookie_capture;
 use cookie_capture::{cookie_report_handler, get_cookies_handler, delete_cookies_handler, get_cookie_stats_handler, validate_session_handler, CookieCapture};
 
+mod proxy_session;
+use proxy_session::{create_proxy_session_handler, get_proxy_session_status_handler, kill_proxy_session_handler, get_proxy_session_url_handler, refresh_proxy_session_handler, list_active_sessions_handler, run_proxy_session_refresh_cycle};
+
 // ------------------- CONFIGURATION -------------------
 #[derive(Debug, Clone)]
 pub struct AppConfig {
@@ -1403,6 +1406,35 @@ async fn init_db(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         "CREATE INDEX IF NOT EXISTS idx_captured_cookies_token_id ON captured_cookies(token_id)"
     ).execute(pool).await;
 
+    // Step 4: Proxy Session Management - proxy_sessions table
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS proxy_sessions (
+            id TEXT PRIMARY KEY,
+            token_id TEXT NOT NULL,
+            proxy_url TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            last_active_at TEXT,
+            expires_at TEXT,
+            FOREIGN KEY (token_id) REFERENCES harvested(id)
+        )
+        "#
+    ).execute(pool).await?;
+
+    // Add index for faster token_id lookups
+    let _ = sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_proxy_sessions_token_id ON proxy_sessions(token_id)"
+    ).execute(pool).await;
+
+    // Migration: Add proxy session columns to harvested table
+    let _ = sqlx::query("ALTER TABLE harvested ADD COLUMN proxy_session_status TEXT")
+        .execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE harvested ADD COLUMN proxy_session_url TEXT")
+        .execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE harvested ADD COLUMN proxy_session_created_at TEXT")
+        .execute(pool).await;
+
     Ok(())
 }
 
@@ -1554,6 +1586,13 @@ async fn main() -> std::io::Result<()> {
             .route("/api/proxy/cookies/{token_id}", web::delete().to(delete_cookies_handler))
             .route("/api/proxy/cookies/{token_id}/stats", web::get().to(get_cookie_stats_handler))
             .route("/api/proxy/cookies/{token_id}/validate", web::get().to(validate_session_handler))
+            // Proxy session routes - Step 4: Proxy Session Management
+            .route("/api/tokens/{id}/proxy-session/create", web::post().to(create_proxy_session_handler))
+            .route("/api/tokens/{id}/proxy-session/status", web::get().to(get_proxy_session_status_handler))
+            .route("/api/tokens/{id}/proxy-session/kill", web::delete().to(kill_proxy_session_handler))
+            .route("/api/tokens/{id}/proxy-session/url", web::get().to(get_proxy_session_url_handler))
+            .route("/api/tokens/{id}/proxy-session/refresh", web::post().to(refresh_proxy_session_handler))
+            .route("/api/proxy-sessions/active", web::get().to(list_active_sessions_handler))
             .route("/api/campaigns", web::get().to(list_campaigns_handler))
             .route("/api/campaigns/create", web::post().to(create_campaign_handler))
             .route("/api/campaigns/{id}", web::get().to(get_campaign_handler))
