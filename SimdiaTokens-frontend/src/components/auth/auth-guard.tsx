@@ -10,14 +10,18 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
+  // Public routes that don't require authentication
+  const publicRoutes = ["/login", "/super-admin"];
+  const isPublicRoute = pathname ? publicRoutes.includes(pathname) : false;
+
   useEffect(() => {
-    if (!isLoading && !isAuthenticated && pathname && pathname !== "/login") {
+    if (!isLoading && !isAuthenticated && pathname && !isPublicRoute) {
       router.replace("/login");
     }
-  }, [isLoading, isAuthenticated, pathname, router]);
+  }, [isLoading, isAuthenticated, pathname, router, isPublicRoute]);
 
-  // Never block login page or while pathname is still resolving (null during hydration)
-  if (!pathname || pathname === "/login") {
+  // Never block login page, super-admin, or while pathname is still resolving (null during hydration)
+  if (!pathname || isPublicRoute) {
     return <>{children}</>;
   }
 
