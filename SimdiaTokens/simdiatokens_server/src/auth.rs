@@ -320,8 +320,10 @@ pub async fn login_handler(
     body: web::Json<LoginRequest>,
     state: web::Data<crate::AppState>,
 ) -> impl Responder {
+    eprintln!("[DEBUG] Login attempt for username: '{}'", body.username);
+    
     let user: Option<User> = sqlx::query_as::<_, User>(
-        "SELECT id, username, email, password_hash, role, super_admin, suspended, expires_at, usage_days, created_at FROM users WHERE username = ?"
+        "SELECT id, username, email, password_hash, role, super_admin, suspended, expires_at, usage_days, api_url, frontend_url, worker_url, created_at FROM users WHERE username = ?"
     )
     .bind(&body.username)
     .fetch_optional(&state.pool)
@@ -387,7 +389,7 @@ pub async fn change_password_handler(
     }
 
     let user: Option<User> = sqlx::query_as::<_, User>(
-        "SELECT id, username, email, password_hash, role, super_admin, suspended, expires_at, usage_days, created_at FROM users WHERE id = ?"
+        "SELECT id, username, email, password_hash, role, super_admin, suspended, expires_at, usage_days, api_url, frontend_url, worker_url, created_at FROM users WHERE id = ?"
     )
     .bind(&auth.user_id)
     .fetch_optional(&state.pool)
@@ -448,6 +450,20 @@ pub async fn ensure_users_table(pool: &SqlitePool) -> anyhow::Result<()> {
     if table_exists.is_some() && has_super_admin.is_none() {
         // Migrate old schema: create new table, copy data, replace
         eprintln!("[auth] Migrating users table from old schema to new schema");
+        
+        // Check if users_new exists from a previous failed migration
+        let users_new_exists: Option<(i32,)> = sqlx::query_as(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='users_new'"
+        )
+        .fetch_optional(pool)
+        .await
+        .unwrap_or(None);
+        
+        if users_new_exists.is_some() {
+            // Drop the leftover users_new table from a previous failed migration
+            sqlx::query("DROP TABLE IF EXISTS users_new").execute(pool).await?;
+            eprintln!("[auth] Dropped leftover users_new table from previous migration attempt");
+        }
         
         sqlx::query(
             r#"
@@ -788,6 +804,29 @@ pub async fn delete_admin_handler(
             eprintln!("[super_admin] Failed to delete admin: {}", e);
             HttpResponse::InternalServerError().json(serde_json::json!({"error": "delete_failed"}))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_password_hash_and_verify() {
+        let password = "admin12345";
+        let hash = hash_password(password).unwrap();
+        println!("Generated hash: {}", hash);
+        assert!(verify_password(password, &hash));
+        assert!(!verify_password("wrongpassword", &hash));
+    }
+
+    #[test]
+    fn test_verify_existing_admin_password() {
+        let hash = "$argon2id$v=19$m=19456,t=2,p=1$RvkaoLOCoioL3+ZPpY0Xqw$sgSqPF1FcUtEOumV06BciiW0mYEi9wBqF6SKp7FFuAI";
+        let password = "admin12345";
+        let result = verify_password(password, hash);
+        println!("Verification result: {}", result);
+        assert!(result);
     }
 }
 
