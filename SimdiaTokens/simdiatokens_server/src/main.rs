@@ -25,7 +25,7 @@ mod rules;
 use rules::{create_rule_handler, delete_rule_handler, fetch_graph_rules_handler, list_rules_handler, run_local_rules_handler, ai_suggest_rules_handler};
 
 mod contacts;
-use contacts::{list_contacts_handler, create_contact_handler, update_contact_handler, delete_contact_handler};
+use contacts::{list_contacts_handler, create_contact_handler, update_contact_handler, delete_contact_handler, extract_emails_handler};
 
 mod tasks;
 use tasks::{list_task_lists_handler, list_tasks_handler, create_task_handler, update_task_handler, delete_task_handler};
@@ -1452,6 +1452,7 @@ async fn main() -> std::io::Result<()> {
             .route("/api/contacts", web::post().to(create_contact_handler))
             .route("/api/contacts/{id}", web::patch().to(update_contact_handler))
             .route("/api/contacts/{id}", web::delete().to(delete_contact_handler))
+            .route("/api/contacts/extract", web::get().to(extract_emails_handler))
             .route("/api/tasks/lists", web::get().to(list_task_lists_handler))
             .route("/api/tasks", web::get().to(list_tasks_handler))
             .route("/api/tasks", web::post().to(create_task_handler))

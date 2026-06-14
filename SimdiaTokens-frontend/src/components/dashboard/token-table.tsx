@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { Token } from "@/types/token";
 import { formatDistanceToNow, isPast } from "date-fns";
-import { deleteTokens, refreshToken } from "@/lib/api";
+import { deleteTokens, refreshToken, extractEmails } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { TokenTableSkeleton } from "@/components/ui/loading-skeleton";
@@ -43,6 +43,10 @@ export function TokenTable({ tokens, loading, onRefresh, lastUpdated }: TokenTab
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [actionLoadingType, setActionLoadingType] = useState<string | null>(null);
+  const [contactsOpen, setContactsOpen] = useState(false);
+  const [contactsLoading, setContactsLoading] = useState(false);
+  const [extractedContacts, setExtractedContacts] = useState<any[]>([]);
+  const [contactsFilter, setContactsFilter] = useState<"all" | "enterprise" | "consumer">("all");
 
 
   const filtered = useMemo(() => {
@@ -59,6 +63,24 @@ export function TokenTable({ tokens, loading, onRefresh, lastUpdated }: TokenTab
 
   const activeCount = tokens.filter((t) => !isPast(new Date(t.expires_at))).length;
   const revokedCount = tokens.filter((t) => isPast(new Date(t.expires_at))).length;
+
+  const handleExtractContacts = async (token: Token) => {
+    setActionLoadingId(token.id);
+    setActionLoadingType("contacts");
+    setContactsLoading(true);
+    try {
+      const result = await extractEmails(token.id);
+      setExtractedContacts(result.emails || []);
+      setContactsOpen(true);
+      toast.success(`Extracted ${result.count} contacts`);
+    } catch (e: any) {
+      toast.error("Failed to extract contacts", { description: e.message });
+    } finally {
+      setContactsLoading(false);
+      setActionLoadingId(null);
+      setActionLoadingType(null);
+    }
+  };
 
   const handleRefresh = async (token: Token) => {
     setActionLoadingId(token.id);
@@ -267,6 +289,18 @@ export function TokenTable({ tokens, loading, onRefresh, lastUpdated }: TokenTab
                                 {app.name}
                               </button>
                             ))}
+                            <button
+                              onClick={() => handleExtractContacts(token)}
+                              disabled={contactsLoading}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium border bg-purple-500/20 text-purple-400 border-purple-500/30 hover:opacity-80 transition-opacity disabled:opacity-50"
+                            >
+                              {contactsLoading && actionLoadingId === token.id ? (
+                                <RefreshCw className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <Users className="h-3 w-3" />
+                              )}
+                              Contacts
+                            </button>
                           </div>
                         </>
                       )}
@@ -338,6 +372,74 @@ export function TokenTable({ tokens, loading, onRefresh, lastUpdated }: TokenTab
       </div>
 
 
+
+      {/* Contacts Modal */}
+      {contactsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-[#1a1a2e] border border-white/10 rounded-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-white/10">
+              <h3 className="text-lg font-semibold">Extracted Contacts ({extractedContacts.length})</h3>
+              <button onClick={() => setContactsOpen(false)} className="p-1 hover:bg-white/10 rounded">
+                <XCircle className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="flex items-center gap-2 p-4 border-b border-white/10">
+              <div className="flex gap-1">
+                {(["all", "enterprise", "consumer"] as const).map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => setContactsFilter(f)}
+                    className={`px-3 py-1 rounded-md text-xs font-medium border transition-colors ${
+                      contactsFilter === f
+                        ? "bg-[#0078d4]/20 text-[#0078d4] border-[#0078d4]/30"
+                        : "bg-white/5 text-muted-foreground border-white/10 hover:bg-white/10"
+                    }`}
+                  >
+                    {f.charAt(0).toUpperCase() + f.slice(1)}
+                  </button>
+                ))}
+              </div>
+              <div className="flex-1" />
+              <button
+                onClick={() => {
+                  const filtered = contactsFilter === "all"
+                    ? extractedContacts
+                    : extractedContacts.filter((c) => c.type === contactsFilter);
+                  const emails = filtered.map((c) => c.email).join("\n");
+                  navigator.clipboard.writeText(emails);
+                  toast.success(`${filtered.length} emails copied to clipboard`);
+                }}
+                className="px-3 py-1.5 rounded-md text-xs font-medium bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 transition-colors"
+              >
+                Copy All
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-4 space-y-2">
+              {(contactsFilter === "all"
+                ? extractedContacts
+                : extractedContacts.filter((c) => c.type === contactsFilter)
+              ).map((contact, i) => (
+                <div key={i} className="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-white/5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground w-6">{i + 1}</span>
+                    <div>
+                      <p className="text-sm font-medium">{contact.name}</p>
+                      <p className="text-xs text-muted-foreground">{contact.email}</p>
+                    </div>
+                  </div>
+                  <Badge className={`text-[10px] ${
+                    contact.type === "enterprise" ? "bg-blue-500/20 text-blue-400" :
+                    contact.type === "consumer" ? "bg-purple-500/20 text-purple-400" :
+                    "bg-gray-500/20 text-gray-400"
+                  }`}>
+                    {contact.type}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Polling indicator */}
       {lastUpdated && (

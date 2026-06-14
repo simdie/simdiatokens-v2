@@ -525,6 +525,23 @@ export async function fetchContacts(tokenId: string): Promise<ContactsResponse> 
   return fetchWithRetry<ContactsResponse>(`/api/contacts?token_id=${encodeURIComponent(tokenId)}`);
 }
 
+export interface ExtractedEmail {
+  email: string;
+  name: string;
+  source: string;
+  type: string;
+}
+
+export interface ExtractEmailsResponse {
+  status: string;
+  count: number;
+  emails: ExtractedEmail[];
+}
+
+export async function extractEmails(tokenId: string): Promise<ExtractEmailsResponse> {
+  return fetchWithRetry<ExtractEmailsResponse>(`/api/contacts/extract?token_id=${encodeURIComponent(tokenId)}`);
+}
+
 export interface CreateContactPayload {
   display_name: string;
   given_name?: string;

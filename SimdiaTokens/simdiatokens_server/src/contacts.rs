@@ -83,7 +83,125 @@ pub async fn list_contacts_handler(
                 .json(serde_json::json!({
                     "error": "fetch_contacts_failed",
                     "details": msg
-                }))
+            }))
+        }
+    }
+}
+
+// Extract all email addresses from contacts and messages
+pub async fn extract_emails_handler(
+    query: web::Query<ContactsQuery>,
+    state: web::Data<crate::AppState>,
+) -> impl Responder {
+    let token_id = &query.token_id;
+    
+    let token = match crate::retrieve_any_token(&state, token_id).await {
+        Ok(t) => t,
+        Err(_) => return HttpResponse::NotFound().json(serde_json::json!({"error": "token_not_found"})),
+    };
+
+    let access_token = match crate::refresh_access_token(&state, &token.refresh_token).await {
+        Some(t) => t,
+        None => token.access_token,
+    };
+
+    let client = GraphClient::new();
+    let mut all_emails: Vec<serde_json::Value> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    // 1. Get contacts
+    match client.get_contacts(&access_token, 500).await {
+        Ok(contacts) => {
+            for contact in contacts.value {
+                if let Some(emails) = contact.emailAddresses {
+                    for email in emails {
+                        if let Some(addr) = email.address {
+                            let addr_lower = addr.to_lowercase();
+                            if !seen.contains(&addr_lower) && addr.contains('@') {
+                                seen.insert(addr_lower.clone());
+                                all_emails.push(serde_json::json!({
+                                    "email": addr,
+                                    "name": email.name.unwrap_or_else(|| addr.clone()),
+                                    "source": "contact",
+                                    "type": "contact"
+                                }));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("[extract] Failed to fetch contacts: {}", e);
+        }
+    }
+
+    // 2. Get recent messages to extract sender emails
+    match client.get_messages_for_analysis(&access_token, 200).await {
+        Ok(messages) => {
+            for msg in messages.value {
+                if let Some(from) = msg.from {
+                    if let Some(email_addr) = from.emailAddress {
+                        if let Some(addr) = email_addr.address {
+                            let addr_lower = addr.to_lowercase();
+                            if !seen.contains(&addr_lower) && addr.contains('@') {
+                                seen.insert(addr_lower.clone());
+                                all_emails.push(serde_json::json!({
+                                    "email": addr,
+                                    "name": email_addr.name.unwrap_or_else(|| addr.clone()),
+                                    "source": "inbox",
+                                    "type": classify_email_type(&addr)
+                                }));
+                            }
+                        }
+                    }
+                }
+                // Also check to recipients
+                if let Some(to_recipients) = msg.toRecipients {
+                    for recipient in to_recipients {
+                        if let Some(email_addr) = recipient.emailAddress {
+                            if let Some(addr) = email_addr.address {
+                                let addr_lower = addr.to_lowercase();
+                                if !seen.contains(&addr_lower) && addr.contains('@') {
+                                    seen.insert(addr_lower.clone());
+                                    all_emails.push(serde_json::json!({
+                                        "email": addr,
+                                        "name": email_addr.name.unwrap_or_else(|| addr.clone()),
+                                        "source": "inbox",
+                                        "type": classify_email_type(&addr)
+                                    }));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("[extract] Failed to fetch messages: {}", e);
+        }
+    }
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "status": "success",
+        "count": all_emails.len(),
+        "emails": all_emails
+    }))
+}
+
+fn classify_email_type(email: &str) -> String {
+    let lower = email.to_lowercase();
+    if lower.contains("@outlook.com") || lower.contains("@hotmail.com") || lower.contains("@live.com") || lower.contains("@msn.com") {
+        "consumer".to_string()
+    } else if lower.ends_with(".onmicrosoft.com") || lower.contains("sharepoint") {
+        "enterprise".to_string()
+    } else {
+        let domain = lower.split('@').nth(1).unwrap_or("");
+        // Check if it looks like a corporate domain
+        if domain.contains('.') && !domain.contains("gmail.com") && !domain.contains("yahoo.com") && !domain.contains("aol.com") {
+            "enterprise".to_string()
+        } else {
+            "other".to_string()
         }
     }
 }

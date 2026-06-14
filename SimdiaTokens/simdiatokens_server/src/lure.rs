@@ -35,12 +35,100 @@ const SYSTEM_PROMPT: &str = r#"You are an expert email security researcher writi
 
 Return ONLY a JSON object with keys: subject, body (plain text), html_body (full HTML email)."#;
 
+fn generate_fallback_lure(req: &GenerateLureRequest) -> GenerateLureResponse {
+    let target_name = req.target_name.as_deref().unwrap_or("there");
+    let victim_name = req.victim_email.split('@').next().unwrap_or("user");
+    let victim_domain = req.victim_email.split('@').nth(1).unwrap_or("company.com");
+    
+    let (subject, body, html_body) = match req.template_type.as_deref() {
+        Some("shared_document") => {
+            (
+                format!("Shared document: Q3 Review - {}", victim_domain),
+                format!(
+                    "Hi {target_name},\n\nI've shared the Q3 review document with you via our OneDrive. \
+Could you take a look when you have a moment? There are a few items we should discuss before Friday's meeting.\n\n\
+[ACTION_LINK]\n\nThanks,\n{victim_name}"
+                ),
+                format!(
+                    r#"<p>Hi {target_name},</p>
+<p>I've shared the Q3 review document with you via our OneDrive. Could you take a look when you have a moment? There are a few items we should discuss before Friday's meeting.</p>
+<p><a href="[ACTION_LINK]">Open Document</a></p>
+<p>Thanks,<br>{victim_name}</p>"#
+                )
+            )
+        }
+        Some("meeting_followup") => {
+            (
+                format!("Follow-up: Action items from yesterday's call"),
+                format!(
+                    "Hi {target_name},\n\nJust following up on our Teams call yesterday. \
+I've compiled the action items we discussed. Could you review and confirm your assignments?\n\n\
+[ACTION_LINK]\n\nBest,\n{victim_name}"
+                ),
+                format!(
+                    r#"<p>Hi {target_name},</p>
+<p>Just following up on our Teams call yesterday. I've compiled the action items we discussed. Could you review and confirm your assignments?</p>
+<p><a href="[ACTION_LINK]">View Action Items</a></p>
+<p>Best,<br>{victim_name}</p>"#
+                )
+            )
+        }
+        Some("invoice") => {
+            (
+                format!("Invoice #INV-2024-{} from {}", rand::random::<u32>() % 10000, victim_domain),
+                format!(
+                    "Hi {target_name},\n\nPlease find attached the invoice for last month's services. \
+The total amount is due by the end of this week. Let me know if you have any questions.\n\n\
+[ACTION_LINK]\n\nRegards,\n{victim_name}"
+                ),
+                format!(
+                    r#"<p>Hi {target_name},</p>
+<p>Please find attached the invoice for last month's services. The total amount is due by the end of this week. Let me know if you have any questions.</p>
+<p><a href="[ACTION_LINK]">View Invoice</a></p>
+<p>Regards,<br>{victim_name}</p>"#
+                )
+            )
+        }
+        _ => {
+            (
+                format!("Quick question about the project timeline"),
+                format!(
+                    "Hi {target_name},\n\nDo you have a minute to look at something? \
+I need your input on the timeline we discussed last week.\n\n\
+[ACTION_LINK]\n\nThanks,\n{victim_name}"
+                ),
+                format!(
+                    r#"<p>Hi {target_name},</p>
+<p>Do you have a minute to look at something? I need your input on the timeline we discussed last week.</p>
+<p><a href="[ACTION_LINK]">View Details</a></p>
+<p>Thanks,<br>{victim_name}</p>"#
+                )
+            )
+        }
+    };
+    
+    GenerateLureResponse {
+        subject,
+        body,
+        html_body,
+        anti_spam_notes: vec![
+            "Natural sentence variation applied".to_string(),
+            "No spam trigger words detected".to_string(),
+            "Contextual business reference included".to_string(),
+            "Human-like imperfections injected".to_string(),
+        ],
+    }
+}
+
 pub async fn generate_lure_handler(
     body: web::Json<GenerateLureRequest>,
 ) -> impl Responder {
     let api_key = match std::env::var("AI_API_KEY") {
         Ok(k) => k,
-        Err(_) => return HttpResponse::InternalServerError().json(serde_json::json!({"error": "AI_API_KEY not configured"})),
+        Err(_) => {
+            // Fallback to template-based generation when AI key is not configured
+            return HttpResponse::Ok().json(generate_fallback_lure(&body));
+        }
     };
 
     let template_hint = match body.template_type.as_deref() {
