@@ -164,15 +164,18 @@ impl CaptchaDetector {
 // === Redirect Chain Validator ===
 
 #[derive(Debug, Clone, Serialize)]
+#[allow(dead_code)]
 pub struct RedirectChainInfo {
     pub hop_count: usize,
     pub hops: Vec<String>,
     pub has_known_cdn: bool,
 }
 
+#[allow(dead_code)]
 pub struct RedirectValidator;
 
 impl RedirectValidator {
+    #[allow(dead_code)]
     pub fn validate(headers: &actix_web::http::header::HeaderMap) -> RedirectChainInfo {
         let mut hops = Vec::new();
 

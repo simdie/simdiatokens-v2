@@ -1,7 +1,7 @@
 use serde::Deserialize;
-use std::collections::HashMap;
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct IpInfoResponse {
     ip: String,
     city: Option<String>,
@@ -11,6 +11,7 @@ struct IpInfoResponse {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct IpApiResponse {
     ip: String,
     city: Option<String>,
@@ -68,6 +69,7 @@ pub async fn get_location_from_ip(ip: &str) -> (String, String, String) {
 }
 
 /// Get professional tenant name based on email domain
+#[allow(dead_code)]
 pub fn get_tenant_display_name(email: &str, tenant_id: &Option<String>) -> (String, String) {
     let parts: Vec<&str> = email.split('@').collect();
     let domain = if parts.len() == 2 {

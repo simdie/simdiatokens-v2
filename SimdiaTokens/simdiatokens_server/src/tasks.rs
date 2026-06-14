@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 use actix_web::{web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
 

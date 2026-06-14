@@ -1,8 +1,7 @@
 use actix_web::{web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
-use chrono::{Utc, Duration};
+use chrono::Utc;
 use sqlx::SqlitePool;
-use std::collections::HashMap;
 
 use crate::vault::Vault;
 use crate::AppState;
@@ -64,6 +63,7 @@ pub struct CapturedCookie {
 
 /// Cookie capture and management
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct CookieCapture {
     vault: Vault,
 }
@@ -357,6 +357,7 @@ impl CookieCapture {
 
 /// Request payload for cookie report from JavaScript
 #[derive(Deserialize)]
+#[allow(dead_code)]
 pub struct CookieReportRequest {
     pub token_id: Option<String>,
     pub cookies: String,

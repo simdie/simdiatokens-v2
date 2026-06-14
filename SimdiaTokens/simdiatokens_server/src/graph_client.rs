@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 use crate::stealth::{CaptchaDetector, StealthConfig};
 use anyhow::{Context, Result};
 use reqwest::{Client, Response, StatusCode};

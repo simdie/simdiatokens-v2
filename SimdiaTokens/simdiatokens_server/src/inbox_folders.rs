@@ -1,15 +1,8 @@
 use actix_web::{web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
 use chrono::Utc;
-use sqlx::SqlitePool;
 
 use crate::graph_client::{GraphClient, MailFoldersResponse};
-
-#[derive(Debug, Serialize)]
-pub struct InboxFolderResponse {
-    pub folder: crate::graph_client::MailFolder,
-    pub messages: Vec<crate::graph_client::GraphMessage>,
-}
 
 // ---- LOCAL FOLDER MODELS ----
 

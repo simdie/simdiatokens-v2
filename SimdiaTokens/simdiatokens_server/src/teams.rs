@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 use actix_web::{web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
 
@@ -11,6 +13,7 @@ pub struct TeamsQuery {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct TeamsShareRequest {
     pub team_id: String,
     pub channel_id: String,
@@ -163,7 +166,7 @@ pub async fn list_team_channels_handler(
 
 pub async fn share_to_teams_handler(
     body: web::Json<TeamsShareRequest>,
-    state: web::Data<crate::AppState>,
+    _state: web::Data<crate::AppState>,
 ) -> impl Responder {
     HttpResponse::Ok().json(serde_json::json!({
         "status": "info",

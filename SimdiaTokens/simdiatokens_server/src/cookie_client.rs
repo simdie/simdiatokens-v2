@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use chrono::{Utc, Duration};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
+use base64::{Engine as _, engine::general_purpose};
 
 use crate::AppState;
 
@@ -33,7 +34,7 @@ pub fn generate_bookmarklet_token(token_id: &str, master_secret: &str) -> String
     mac.update(payload_json.as_bytes());
     let signature = hex::encode(mac.finalize().into_bytes());
     
-    format!("{}.{}", base64::encode(payload_json), signature)
+    format!("{}.{}", general_purpose::STANDARD.encode(payload_json), signature)
 }
 
 /// Verify a signed bookmarklet token. Returns token_id if valid.
@@ -46,7 +47,7 @@ fn verify_bookmarklet_token(token: &str, master_secret: &str) -> Option<String> 
     let payload_b64 = parts[0];
     let signature_hex = parts[1];
     
-    let payload_json = match base64::decode(payload_b64) {
+    let payload_json = match general_purpose::STANDARD.decode(payload_b64) {
         Ok(v) => String::from_utf8(v).ok()?,
         Err(_) => return None,
     };
@@ -165,6 +166,7 @@ impl CookieClient {
     }
     
     /// Fetch OWA inbox HTML using cookies.
+    #[allow(dead_code)]
     pub async fn fetch_owa_inbox(&self) -> Result<String, anyhow::Error> {
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())

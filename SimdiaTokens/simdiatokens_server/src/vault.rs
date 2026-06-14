@@ -274,7 +274,9 @@ mod tests {
                 expires_at DATETIME NOT NULL,
                 created_at DATETIME NOT NULL,
                 last_refreshed_at DATETIME,
-                account_type TEXT
+                status TEXT DEFAULT 'active',
+                account_type TEXT,
+                cookie_session TEXT
             )
             "#,
         )

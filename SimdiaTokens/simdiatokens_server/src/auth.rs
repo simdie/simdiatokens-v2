@@ -1,5 +1,4 @@
-use actix_web::{web, HttpResponse, Responder, FromRequest};
-use actix_web_httpauth::extractors::bearer::BearerAuth;
+use actix_web::{web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
 use chrono::Utc;
 use sqlx::SqlitePool;
@@ -15,6 +14,7 @@ pub enum Role {
     Viewer,
 }
 
+#[allow(dead_code)]
 impl Role {
     pub fn from_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
@@ -60,6 +60,7 @@ impl Role {
 // === User Model ===
 
 #[derive(Debug, Clone, sqlx::FromRow)]
+#[allow(dead_code)]
 pub struct User {
     pub id: String,
     pub username: String,

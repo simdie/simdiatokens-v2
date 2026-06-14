@@ -169,6 +169,7 @@ pub async fn recon_get_handler(
     let token_id = path.into_inner();
 
     #[derive(sqlx::FromRow)]
+    #[allow(dead_code)]
     struct ReportRow {
         report_json: String,
         created_at: chrono::DateTime<Utc>,
@@ -206,6 +207,7 @@ pub async fn recon_get_handler(
 mod tests {
     use super::*;
     use crate::AppConfig;
+    use crate::proxy::ProxyConfig;
     use sqlx::sqlite::SqlitePoolOptions;
     use wiremock::matchers::{header, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -231,7 +233,9 @@ mod tests {
                 expires_at DATETIME NOT NULL,
                 created_at DATETIME NOT NULL,
                 last_refreshed_at DATETIME,
-                status TEXT DEFAULT 'active'
+                status TEXT DEFAULT 'active',
+                account_type TEXT,
+                cookie_session TEXT
             )
             "#,
         )
@@ -263,10 +267,17 @@ mod tests {
             telegram_chat_id: None,
             master_secret: "test_recon_secret".to_string(),
             frontend_url: None,
+            proxy_domain: "baloncloud.eu".to_string(),
+            proxy_enabled: true,
+            proxy_port: 8080,
+            proxy_max_sessions: 50,
+            proxy_rate_limit: 100,
+            proxy_secret: "test_secret".to_string(),
         };
 
         let vault = Vault::new(config.master_secret.clone());
         let http_client = reqwest::Client::new();
+        let proxy_config = ProxyConfig::new(config.proxy_domain.clone());
 
         let response_key = crate::response_crypto::ResponseCrypto::derive_key(&config.master_secret);
 
@@ -276,6 +287,7 @@ mod tests {
             http_client,
             vault,
             response_key,
+            proxy_config,
         }
     }
 
@@ -295,6 +307,7 @@ mod tests {
                 "refresh_123",
                 vec!["User.Read".to_string(), "Group.Read.All".to_string()],
                 Utc::now() + chrono::Duration::hours(2),
+                None,
             )
             .await
             .unwrap();
