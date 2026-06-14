@@ -423,7 +423,7 @@ pub async fn change_password_handler(
         .execute(&state.pool)
         .await
     {
-        Ok(_) => HttpResponse::Ok().json(serde_json::json!({"status": "password_changed"})),
+        Ok(_) => HttpResponse::Ok().json(serde_json::json!({"success": true, "message": "Password changed successfully"})),
         Err(_) => HttpResponse::InternalServerError().json(serde_json::json!({"error": "update_failed"})),
     }
 }
