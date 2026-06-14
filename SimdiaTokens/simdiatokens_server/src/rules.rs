@@ -885,7 +885,7 @@ mod tests {
     use crate::proxy::ProxyConfig;
     use crate::vault::Vault;
     use sqlx::sqlite::SqlitePoolOptions;
-    use wiremock::matchers::{header, method, path};
+    use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     async fn setup_test_state() -> AppState {

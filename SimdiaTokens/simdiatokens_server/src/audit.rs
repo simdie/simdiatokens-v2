@@ -634,7 +634,7 @@ mod tests {
     async fn test_audit_summary() {
         let state = setup_test_state().await;
 
-        for i in 0..5 {
+        for _i in 0..5 {
             insert_audit_log(
                 &state.pool,
                 "token_stored",

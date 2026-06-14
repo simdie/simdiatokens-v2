@@ -159,10 +159,45 @@ pub async fn proxy_handler(
         None
     };
     
+    // Admin-only: Verify admin token for /s/ paths (proxy sessions)
+    if path.starts_with("/s/") {
+        let query = req.uri().query().unwrap_or("");
+        let admin_token = query.split('&')
+            .find_map(|param| {
+                let mut parts = param.splitn(2, '=');
+                if parts.next() == Some("admin_token") {
+                    parts.next()
+                } else {
+                    None
+                }
+            });
+        
+        let is_valid = if let (Some(ref tid), Some(token)) = (&token_id, admin_token) {
+            let proxy_session = crate::proxy_session::ProxySession::new(
+                config.proxy_domain.clone(),
+                state.config.proxy_secret.clone(),
+                state.vault.clone(),
+            );
+            proxy_session.verify_admin_token(tid, token)
+        } else {
+            false
+        };
+        
+        if !is_valid {
+            eprintln!("[proxy] Admin token verification failed for path: {}", path);
+            log_request(&req, token_id.as_deref(), 403, 0);
+            return HttpResponse::Forbidden().json(serde_json::json!({
+                "error": "admin_access_required",
+                "message": "Proxy sessions require admin authentication. Please access this URL through the admin dashboard."
+            }));
+        }
+    }
+    
     // Auto-create proxy session if token_id is present and session doesn't exist yet
     if let Some(ref tid) = token_id {
         let proxy_session = crate::proxy_session::ProxySession::new(
             config.proxy_domain.clone(),
+            state.config.proxy_secret.clone(),
             state.vault.clone(),
         );
         // Check if session exists

