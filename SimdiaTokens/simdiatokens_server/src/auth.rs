@@ -1043,6 +1043,16 @@ pub async fn update_admin_handler(
                             if let Some(usage_days) = body.usage_days {
                                 let exp = Utc::now() + chrono::Duration::days(usage_days as i64);
                                 sync_body["expires_at"] = serde_json::json!(exp.to_rfc3339());
+                                // When subscription is extended, ALWAYS unsuspend
+                                // on the client backend. The client backend may
+                                // have auto-suspended them when the previous
+                                // subscription expired, and we need to clear it.
+                                sync_body["suspended"] = serde_json::json!(false);
+                            }
+
+                            // If expires_at is explicitly set, also unsuspend.
+                            if let Some(_expires_at) = &body.expires_at {
+                                sync_body["suspended"] = serde_json::json!(false);
                             }
 
                             // Only sync if there's something to sync.
