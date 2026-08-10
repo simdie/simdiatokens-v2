@@ -1029,6 +1029,11 @@ pub async fn update_admin_handler(
 
                             // Build the sync body with whatever fields were changed.
                             let mut sync_body = serde_json::json!({});
+                            if let Some(username) = &body.username {
+                                if !username.trim().is_empty() {
+                                    sync_body["new_username"] = serde_json::json!(username.trim());
+                                }
+                            }
                             if let Some(suspended) = body.suspended {
                                 sync_body["suspended"] = serde_json::json!(suspended);
                             }
@@ -1163,6 +1168,7 @@ pub async fn delete_admin_handler(
 #[derive(Deserialize)]
 pub struct SyncUserRequest {
     pub username: Option<String>,
+    pub new_username: Option<String>,
     pub suspended: Option<bool>,
     pub expires_at: Option<String>,
     pub password: Option<String>,
@@ -1180,6 +1186,17 @@ pub async fn sync_user_handler(
     }
 
     let mut set_parts: Vec<String> = Vec::new();
+
+    // Handle username change: if new_username is provided, update the
+    // username of the matched user. The `username` field (if present)
+    // is used to find the user on the client backend; if not present,
+    // we fall back to updating all non-super-admin users.
+    if let Some(new_username) = &body.new_username {
+        let new_un = new_username.trim();
+        if !new_un.is_empty() {
+            set_parts.push(format!("username = '{}'", new_un.replace("'", "''")));
+        }
+    }
 
     if let Some(suspended) = body.suspended {
         set_parts.push(format!("suspended = {}", if suspended { 1 } else { 0 }));
