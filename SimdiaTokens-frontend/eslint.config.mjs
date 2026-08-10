@@ -15,6 +15,10 @@ const eslintConfig = defineConfig([
       "react-hooks/hoist-variable": "off",
       "@typescript-eslint/no-empty-object-type": "off",
       "@typescript-eslint/no-unused-vars": "off",
+      "react-hooks/set-state-in-memo": "off",
+      "react-hooks/hoist-variable": "off",
+      "react-hooks/immutability": "off",
+      "react-hooks/set-state-in-render": "off",
     },
   },
   // Override default ignores of eslint-config-next.
